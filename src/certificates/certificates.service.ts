@@ -173,19 +173,28 @@ export class CertificatesService {
       this.logger.log(`[CertificatesService] 📦 PDF generated (${pdfBuffer.length} bytes)`);
 
       // Upload to Supabase
+      // Format: transactions/{userId}/{transactionId}.pdf
       const filePath = `transactions/${transaction.userId}/${transaction.id}.pdf`;
       this.logger.log(`[CertificatesService] ☁️ Uploading to Supabase: ${filePath}`);
       
-      const { path: uploadedPath } = await this.supabaseService.uploadCertificate(
-        filePath,
-        pdfBuffer,
-      );
+      let uploadedPath: string;
+      let fullPublicUrl: string;
+      
+      try {
+        const uploadResult = await this.supabaseService.uploadCertificate(
+          filePath,
+          pdfBuffer,
+        );
+        uploadedPath = uploadResult.path;
+        this.logger.log(`[CertificatesService] ✅ Uploaded to Supabase: ${uploadedPath}`);
 
-      this.logger.log(`[CertificatesService] ✅ Uploaded to Supabase: ${uploadedPath}`);
-
-      // ✅ Get full public URL for saving in database
-      const fullPublicUrl = this.supabaseService.getCertificatePublicUrl(uploadedPath);
-      this.logger.log(`[CertificatesService] 🔗 Full public URL: ${fullPublicUrl}`);
+        // ✅ Get full public URL for saving in database
+        fullPublicUrl = this.supabaseService.getCertificatePublicUrl(uploadedPath);
+        this.logger.log(`[CertificatesService] 🔗 Full public URL: ${fullPublicUrl}`);
+      } catch (uploadError) {
+        this.logger.error(`[CertificatesService] ❌ Failed to upload certificate to Supabase:`, uploadError);
+        throw new Error(`Certificate upload failed: ${uploadError.message || uploadError}`);
+      }
 
       // Save full URL to transaction table
       transaction.certificatePath = fullPublicUrl;
@@ -193,23 +202,24 @@ export class CertificatesService {
       this.logger.log(`[CertificatesService] 💾 Saved certificate path (full URL) to transaction: ${fullPublicUrl}`);
 
       // ✅ ALSO save certificatePath (full URL) to investments table
-      // If investmentId is provided, update that specific investment
-      // Otherwise, update the most recent investment for this user/property
+      // Priority: Use investmentId from event if provided, otherwise find by transaction relationship
       if (transaction.userId && transaction.propertyId) {
         let investment: Investment | null = null;
         
+        // First priority: Use investmentId from event (most reliable)
         if (investmentId) {
-          // Update the specific investment from the event
           investment = await this.investmentRepo.findOne({
             where: { id: investmentId },
           });
           
-          if (!investment) {
+          if (investment) {
+            this.logger.log(`[CertificatesService] ✅ Found investment by ID: ${investmentId} (${investment.displayCode})`);
+          } else {
             this.logger.warn(`[CertificatesService] ⚠️ Investment ${investmentId} not found, trying to find by user/property...`);
           }
         }
         
-        // Fallback: Find the most recent investment if specific ID not found or not provided
+        // Second priority: Find investment by transaction relationship (userId + propertyId + most recent)
         if (!investment) {
           investment = await this.investmentRepo.findOne({
             where: {
@@ -218,15 +228,26 @@ export class CertificatesService {
             },
             order: { createdAt: 'DESC' }, // Get the most recent investment
           });
+          
+          if (investment) {
+            this.logger.log(`[CertificatesService] ✅ Found investment by user/property: ${investment.displayCode} (${investment.id})`);
+          }
         }
 
+        // Save certificate path to investment
         if (investment) {
           investment.certificatePath = fullPublicUrl;
           await this.investmentRepo.save(investment);
           this.logger.log(`[CertificatesService] 💾 Saved certificate path (full URL) to investment ${investment.displayCode} (${investment.id}): ${fullPublicUrl}`);
         } else {
-          this.logger.warn(`[CertificatesService] ⚠️ Investment not found for userId=${transaction.userId}, propertyId=${transaction.propertyId}, investmentId=${investmentId || 'N/A'}`);
+          this.logger.error(
+            `[CertificatesService] ❌ Investment not found! ` +
+            `userId=${transaction.userId}, propertyId=${transaction.propertyId}, investmentId=${investmentId || 'N/A'}. ` +
+            `Certificate was generated but NOT saved to investment table.`
+          );
         }
+      } else {
+        this.logger.warn(`[CertificatesService] ⚠️ Cannot save to investment: missing userId or propertyId in transaction`);
       }
 
       // Generate signed URL

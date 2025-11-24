@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import type { InvestmentCompletedEvent } from '../events/investment.events';
 import { CertificatesService } from '../certificates/certificates.service';
 import { Transaction } from '../transactions/entities/transaction.entity';
+import { Investment } from '../investments/entities/investment.entity';
 
 @Injectable()
 export class CertificateListener {
@@ -14,6 +15,8 @@ export class CertificateListener {
     private readonly certificatesService: CertificatesService,
     @InjectRepository(Transaction)
     private readonly transactionRepo: Repository<Transaction>,
+    @InjectRepository(Investment)
+    private readonly investmentRepo: Repository<Investment>,
   ) {}
 
   /**
@@ -105,10 +108,21 @@ export class CertificateListener {
         );
         
         // Verify the certificatePath was saved to the investment
-        // The certificatesService should have already saved it, but let's verify
-        this.logger.log(
-          `[CertificateListener] ✅ Certificate path saved to investment ${event.investmentDisplayCode}: ${result.certificatePath}`,
-        );
+        if (event.investmentId) {
+          const investment = await this.investmentRepo.findOne({
+            where: { id: event.investmentId },
+          });
+          
+          if (investment && investment.certificatePath) {
+            this.logger.log(
+              `[CertificateListener] ✅ Verified: Certificate path saved to investment ${event.investmentDisplayCode} (${event.investmentId}): ${investment.certificatePath}`,
+            );
+          } else {
+            this.logger.warn(
+              `[CertificateListener] ⚠️ Warning: Certificate path NOT found in investment ${event.investmentDisplayCode} (${event.investmentId}) after generation. Expected: ${result.certificatePath}`,
+            );
+          }
+        }
       } catch (error) {
         this.logger.error(
           `[CertificateListener] ❌ Failed to generate certificate for transaction ${transaction.id}:`,
