@@ -157,18 +157,10 @@ export class CertificatesService {
         documentHash: this.generateDocumentHash(transaction),
       };
 
-      this.logger.log(`[CertificatesService] 🎨 Rendering HTML template...`);
+      this.logger.log(`[CertificatesService] 📄 Generating PDF with PDFKit...`);
 
-      // Render HTML template
-      const html = await ejs.renderFile(
-        path.join(this.templatesPath, 'transaction-certificate.ejs'),
-        templateData,
-      );
-
-      this.logger.log(`[CertificatesService] 📄 Generating PDF from HTML...`);
-
-      // Generate PDF from HTML
-      const pdfBuffer = await this.pdfService.generateFromHtml(html);
+      // Generate PDF using PDFKit
+      const pdfBuffer = await this.pdfService.generateTransactionCertificate(templateData);
 
       this.logger.log(`[CertificatesService] 📦 PDF generated (${pdfBuffer.length} bytes)`);
 
@@ -385,14 +377,9 @@ export class CertificatesService {
       }),
     };
 
-    // Render HTML template
-    const html = await ejs.renderFile(
-      path.join(this.templatesPath, 'portfolio-summary.ejs'),
-      templateData,
-    );
-
-    // Generate PDF
-    const pdfBuffer = await this.pdfService.generateFromHtml(html);
+    // Generate PDF using PDFKit
+    this.logger.log(`[CertificatesService] 📄 Generating PDF with PDFKit...`);
+    const pdfBuffer = await this.pdfService.generatePortfolioSummary(templateData);
 
     // Upload to Supabase
     const filePath = `portfolio/${userId}/${actualPropertyId}.pdf`;
@@ -500,6 +487,7 @@ export class CertificatesService {
       return null;
     }
   }
+
 
   /**
    * Generate document hash for verification
