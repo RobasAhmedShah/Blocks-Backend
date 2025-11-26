@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { DevtoolsModule } from '@nestjs/devtools-integration';
 import { AppController } from './app.controller';
@@ -30,9 +31,14 @@ import { SupabaseModule } from './supabase/supabase.module';
 import { PdfModule } from './pdf/pdf.module';
 import { CertificatesModule } from './certificates/certificates.module';
 import { MobileCertificatesModule } from './mobile-certificates/mobile-certificates.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true, // Make ConfigModule available globally
+      envFilePath: '.env', // Explicitly specify .env file
+    }),
     DevtoolsModule.register({
       http: process.env.NODE_ENV !== 'production'
     }),
@@ -64,6 +70,7 @@ import { MobileCertificatesModule } from './mobile-certificates/mobile-certifica
     PdfModule, // PDF generation service
     CertificatesModule, // Certificate generation service
     MobileCertificatesModule, // Mobile certificate endpoints
+    NotificationsModule, // Push notifications system
   ],
   controllers: [AppController],
   providers: [AppService],

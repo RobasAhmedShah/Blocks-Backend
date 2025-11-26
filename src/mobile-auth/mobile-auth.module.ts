@@ -8,6 +8,7 @@ import { MobileAuthService } from './mobile-auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { UsersModule } from '../users/users.module';
 import { User } from '../admin/entities/user.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { User } from '../admin/entities/user.entity';
       inject: [ConfigService],
     }),
     UsersModule,
+    NotificationsModule, // For automatic push token registration on login
   ],
   controllers: [MobileAuthController],
   providers: [MobileAuthService, JwtStrategy],
