@@ -8,6 +8,14 @@
       {
         "include": "**/*.ejs",
         "outDir": "dist"
+      },
+      {
+        "include": "**/*.tex",
+        "outDir": "dist"
+      },
+      {
+        "include": "**/*.typ",
+        "outDir": "dist"
       }
     ]
   }

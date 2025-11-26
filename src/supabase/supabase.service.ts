@@ -48,11 +48,12 @@ export class SupabaseService implements OnModuleInit {
     fileBuffer: Buffer,
     contentType: string = 'application/pdf',
   ): Promise<{ path: string; publicUrl: string }> {
+    // Use upsert: true to allow overwriting existing files
     const { data, error } = await this.supabase.storage
       .from(this.certificatesBucket)
       .upload(filePath, fileBuffer, {
         contentType,
-        upsert: false,
+        upsert: true, // Allow overwriting if file already exists
       });
 
     if (error) {
