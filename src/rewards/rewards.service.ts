@@ -12,6 +12,7 @@ import { User } from '../admin/entities/user.entity';
 import { Organization } from '../organizations/entities/organization.entity';
 import { DistributeRoiDto } from './dto/distribute-roi.dto';
 import { RewardDistributedEvent } from '../events/reward.events';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class RewardsService {
@@ -22,6 +23,7 @@ export class RewardsService {
     @InjectRepository(Reward)
     private readonly rewardRepo: Repository<Reward>,
     private readonly eventEmitter: EventEmitter2, // Event-driven architecture
+    private readonly notificationsService: NotificationsService, // Push notifications
   ) {}
 
   async distributeRoi(dto: DistributeRoiDto) {
@@ -150,6 +152,29 @@ export class RewardsService {
           this.logger.log(`Reward distributed event emitted for user ${userDisplayName}`);
         } catch (error) {
           this.logger.error(`Failed to emit reward distributed event for user ${userDisplayName}:`, error);
+          // Don't throw - let the main operation continue
+        }
+
+        // Queue push notification for this user
+        try {
+          await this.notificationsService.queueNotification({
+            userId,
+            title: 'Reward Credited',
+            message: `A new reward of ${roiShare.toFixed(6)} USDT has been added to your property investment.`,
+            data: {
+              type: 'reward',
+              rewardId: savedReward.id,
+              rewardDisplayCode: savedReward.displayCode,
+              propertyId: property.id,
+              propertyDisplayCode: property.displayCode,
+              amountUSDT: roiShare.toString(),
+              // Add URL for navigation to notifications screen
+              url: '/notifications?context=portfolio',
+            },
+          });
+          this.logger.log(`Notification queued for user ${userDisplayName}`);
+        } catch (error) {
+          this.logger.error(`Failed to queue notification for user ${userDisplayName}:`, error);
           // Don't throw - let the main operation continue
         }
       }

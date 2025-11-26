@@ -37,6 +37,12 @@ export class User {
   @Column({ type: 'varchar', length: 500, nullable: true })
   profileImage?: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  expoToken?: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  webPushSubscription?: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

@@ -8,10 +8,12 @@ import { Wallet } from '../wallet/entities/wallet.entity';
 import { Transaction } from '../transactions/entities/transaction.entity';
 import { User } from '../admin/entities/user.entity';
 import { Property } from '../properties/entities/property.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Reward, Investment, Wallet, Transaction, User, Property]),
+    NotificationsModule, // For push notifications
     // PortfolioModule removed - now handled by event listeners
   ],
   controllers: [RewardsController],

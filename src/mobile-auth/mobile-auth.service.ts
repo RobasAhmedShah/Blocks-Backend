@@ -16,6 +16,7 @@ import Decimal from 'decimal.js';
 import * as bcrypt from 'bcryptjs';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface AuthResponse {
   user: Omit<User, 'password'>;
@@ -33,6 +34,7 @@ export class MobileAuthService {
     private readonly dataSource: DataSource,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async login(dto: LoginDto): Promise<AuthResponse> {
@@ -62,8 +64,28 @@ export class MobileAuthService {
     }
 
     // Generate tokens
-
     const tokens = await this.generateTokens(user);
+
+    // Automatically register push tokens if provided
+    if (dto.expoToken) {
+      try {
+        await this.notificationsService.registerExpoToken(user.id, dto.expoToken);
+        this.logger.log(`Expo token registered for user ${user.email}`);
+      } catch (error) {
+        this.logger.error(`Failed to register Expo token for user ${user.email}:`, error);
+        // Don't fail login if token registration fails
+      }
+    }
+
+    if (dto.webPushSubscription) {
+      try {
+        await this.notificationsService.registerWebPush(user.id, dto.webPushSubscription);
+        this.logger.log(`Web push subscription registered for user ${user.email}`);
+      } catch (error) {
+        this.logger.error(`Failed to register Web push for user ${user.email}:`, error);
+        // Don't fail login if token registration fails
+      }
+    }
 
     // Remove password from response
     const { password, ...userWithoutPassword } = user;
