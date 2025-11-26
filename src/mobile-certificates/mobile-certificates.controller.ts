@@ -1,9 +1,10 @@
-import { Controller, Get, Param, Query, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Param, Query, NotFoundException, Post } from '@nestjs/common';
 import { CertificatesService } from '../certificates/certificates.service';
 import { Public } from '../common/decorators/public.decorator';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Transaction } from '../transactions/entities/transaction.entity';
+import { Investment } from '../investments/entities/investment.entity';
 
 @Controller('api/mobile/certificates')
 @Public()
@@ -12,6 +13,8 @@ export class MobileCertificatesController {
     private readonly certificatesService: CertificatesService,
     @InjectRepository(Transaction)
     private readonly transactionRepo: Repository<Transaction>,
+    @InjectRepository(Investment)
+    private readonly investmentRepo: Repository<Investment>,
   ) {}
 
   /**
@@ -118,6 +121,159 @@ export class MobileCertificatesController {
         throw error;
       }
       throw new NotFoundException('Failed to generate portfolio summary certificate');
+    }
+  }
+
+  /**
+   * TEST ENDPOINT: Manually generate certificate for a transaction
+   * POST /api/mobile/certificates/test/generate/:transactionId
+   */
+  @Post('test/generate/:transactionId')
+  async testGenerateCertificate(@Param('transactionId') transactionId: string) {
+    try {
+      // Support both UUID and displayCode
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(transactionId);
+      let transaction;
+      
+      if (isUuid) {
+        transaction = await this.transactionRepo.findOne({
+          where: { id: transactionId },
+          relations: ['user', 'property'],
+        });
+      } else {
+        transaction = await this.transactionRepo.findOne({
+          where: { displayCode: transactionId },
+          relations: ['user', 'property'],
+        });
+      }
+
+      if (!transaction) {
+        throw new NotFoundException(`Transaction not found: ${transactionId}`);
+      }
+
+      // Get investment ID if available
+      let investmentId: string | undefined;
+      if (transaction.userId && transaction.propertyId) {
+        const investment = await this.investmentRepo.findOne({
+          where: {
+            userId: transaction.userId,
+            propertyId: transaction.propertyId,
+          },
+          order: { createdAt: 'DESC' },
+        });
+        investmentId = investment?.id;
+      }
+
+      // Generate certificate
+      const result = await this.certificatesService.generateTransactionCertificate(
+        transaction.id,
+        investmentId,
+      );
+
+      // Verify what was saved
+      const updatedTransaction = await this.transactionRepo.findOne({
+        where: { id: transaction.id },
+      });
+
+      const updatedInvestment = investmentId 
+        ? await this.investmentRepo.findOne({
+            where: { id: investmentId },
+          })
+        : null;
+
+      return {
+        success: true,
+        message: 'Certificate generated successfully',
+        certificate: {
+          certificatePath: result.certificatePath,
+          signedUrl: result.signedUrl,
+        },
+        databaseCheck: {
+          transaction: {
+            id: updatedTransaction?.id,
+            displayCode: updatedTransaction?.displayCode,
+            certificatePath: updatedTransaction?.certificatePath,
+            saved: !!updatedTransaction?.certificatePath,
+          },
+          investment: updatedInvestment ? {
+            id: updatedInvestment.id,
+            displayCode: updatedInvestment.displayCode,
+            certificatePath: updatedInvestment.certificatePath,
+            saved: !!updatedInvestment.certificatePath,
+          } : null,
+        },
+      };
+    } catch (error) {
+      console.error('Test certificate generation error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to generate certificate',
+        stack: error.stack,
+      };
+    }
+  }
+
+  /**
+   * TEST ENDPOINT: Check certificate path in database
+   * GET /api/mobile/certificates/test/check/:transactionId
+   */
+  @Get('test/check/:transactionId')
+  async testCheckCertificate(@Param('transactionId') transactionId: string) {
+    try {
+      // Support both UUID and displayCode
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(transactionId);
+      let transaction;
+      
+      if (isUuid) {
+        transaction = await this.transactionRepo.findOne({
+          where: { id: transactionId },
+        });
+      } else {
+        transaction = await this.transactionRepo.findOne({
+          where: { displayCode: transactionId },
+        });
+      }
+
+      if (!transaction) {
+        throw new NotFoundException(`Transaction not found: ${transactionId}`);
+      }
+
+      // Get related investment
+      let investment: Investment | null = null;
+      if (transaction.userId && transaction.propertyId) {
+        investment = await this.investmentRepo.findOne({
+          where: {
+            userId: transaction.userId,
+            propertyId: transaction.propertyId,
+          },
+          order: { createdAt: 'DESC' },
+        });
+      }
+
+      return {
+        success: true,
+        transaction: {
+          id: transaction.id,
+          displayCode: transaction.displayCode,
+          userId: transaction.userId,
+          propertyId: transaction.propertyId,
+          certificatePath: transaction.certificatePath,
+          hasCertificatePath: !!transaction.certificatePath,
+        },
+        investment: investment ? {
+          id: investment.id,
+          displayCode: investment.displayCode,
+          userId: investment.userId,
+          propertyId: investment.propertyId,
+          certificatePath: investment.certificatePath,
+          hasCertificatePath: !!investment.certificatePath,
+        } : null,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message || 'Failed to check certificate',
+      };
     }
   }
 }

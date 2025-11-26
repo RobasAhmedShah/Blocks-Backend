@@ -8,6 +8,17 @@ import { AppModule } from './app.module';
 import { injectSpeedInsights } from '@vercel/speed-insights';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
+// Suppress punycode deprecation warning (coming from dependencies)
+process.removeAllListeners('warning');
+process.on('warning', (warning) => {
+  if (warning.name === 'DeprecationWarning' && warning.message.includes('punycode')) {
+    // Suppress punycode deprecation warnings from dependencies
+    return;
+  }
+  // Show other warnings normally
+  console.warn(warning.name, warning.message);
+});
+
 
 let cachedApp: NestFastifyApplication | null = null;
 

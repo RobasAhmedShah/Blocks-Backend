@@ -121,54 +121,58 @@ export class CertificatesService {
         });
       }
 
-      // Get stamp URLs
+      // Calculate ownership percentage and average price
+      const tokensPurchased = investment?.tokensPurchased || new Decimal(0);
+      const totalTokens = transaction.property.totalTokens || new Decimal(0);
+      const ownershipPercentage = totalTokens.gt(0)
+        ? tokensPurchased.div(totalTokens).times(100)
+        : new Decimal(0);
+
+      const totalInvested = investment?.amountUSDT || transaction.amountUSDT || new Decimal(0);
+      const averagePrice = tokensPurchased.gt(0)
+        ? totalInvested.div(tokensPurchased)
+        : new Decimal(0);
+
+      // Get stamp URLs for logos
       const secpStampUrl = this.supabaseService.getAssetUrl('stamps/secp.png');
       const sbpStampUrl = this.supabaseService.getAssetUrl('stamps/sbp.png');
 
-      // Prepare template data
-      const templateData = {
-        certificateId: `CERT-${transaction.displayCode}-${Date.now()}`,
-        transactionDisplayCode: transaction.displayCode,
-        transactionDate: transaction.createdAt.toLocaleString('en-US', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-        transactionStatus: transaction.status.toUpperCase(),
-        transactionType: transaction.type.toUpperCase(),
-        investorName: transaction.user.fullName || transaction.user.email,
-        userId: transaction.user.displayCode || transaction.userId,
-        propertyName: transaction.property.title,
-        propertyDisplayCode: transaction.property.displayCode,
-        tokensPurchased: investment?.tokensPurchased?.toString() || 'N/A',
+      // Prepare certificate data for PDFKit
+      const certificateData = {
+        department: 'Blocks Token Land Ownership',
+        subDepartment: '',
+        boxNo: transaction.displayCode || 'N/A',
+        regNo: `REG-${transaction.displayCode}`,
+        ownerName: transaction.user.fullName || transaction.user.email,
+        ownerAddress: transaction.user.email || 'N/A',
+        propertyId: transaction.property.displayCode,
+        location: `${transaction.property.city || ''}, ${transaction.property.country || ''}`.trim() || 'N/A',
+        surveyNo: 'N/A', // Add to Property entity if needed
+        area: 'N/A', // Add to Property entity if needed
+        usage: transaction.property.type || 'N/A',
+        tokensPurchased: tokensPurchased.toString(),
+        totalTokens: totalTokens.toString(),
+        ownershipPercentage: ownershipPercentage.toFixed(8),
         tokenPrice: transaction.property.pricePerTokenUSDT?.toString() || '0',
         totalAmount: transaction.amountUSDT?.toString() || '0',
-        blockchainHash: transaction.metadata?.txHash || null,
-        blockchainNetwork: transaction.metadata?.network || null,
-        secpStampUrl,
-        sbpStampUrl,
-        generatedAt: new Date().toLocaleString('en-US', {
+        averagePrice: averagePrice.toFixed(2),
+        expectedROI: transaction.property.expectedROI?.toString() || '0',
+        authorityName: 'A. B. Registrar', // Can be made configurable
+        designation: 'Registrar of Deeds',
+        serial: `CERT-${transaction.displayCode}-${Date.now()}`,
+        date: transaction.createdAt.toLocaleDateString('en-US', {
           year: 'numeric',
           month: 'long',
           day: 'numeric',
         }),
-        documentHash: this.generateDocumentHash(transaction),
+        secpStampUrl,
+        sbpStampUrl,
       };
 
-      this.logger.log(`[CertificatesService] 🎨 Rendering HTML template...`);
+      this.logger.log(`[CertificatesService] 📄 Generating PDF certificate using PDFKit...`);
 
-      // Render HTML template
-      const html = await ejs.renderFile(
-        path.join(this.templatesPath, 'transaction-certificate.ejs'),
-        templateData,
-      );
-
-      this.logger.log(`[CertificatesService] 📄 Generating PDF from HTML...`);
-
-      // Generate PDF
-      const pdfBuffer = await this.pdfService.generateFromHtml(html);
+      // Generate PDF using PDFKit
+      const pdfBuffer = await this.pdfService.generateCertificate(certificateData);
 
       this.logger.log(`[CertificatesService] 📦 PDF generated (${pdfBuffer.length} bytes)`);
 
@@ -187,10 +191,23 @@ export class CertificatesService {
       const fullPublicUrl = this.supabaseService.getCertificatePublicUrl(uploadedPath);
       this.logger.log(`[CertificatesService] 🔗 Full public URL: ${fullPublicUrl}`);
 
-      // Save full URL to transaction table
-      transaction.certificatePath = fullPublicUrl;
-      await this.transactionRepo.save(transaction);
-      this.logger.log(`[CertificatesService] 💾 Saved certificate path (full URL) to transaction: ${fullPublicUrl}`);
+      // Save full URL to transaction table using update() for reliability
+      await this.transactionRepo.update(
+        { id: transaction.id },
+        { certificatePath: fullPublicUrl }
+      );
+      
+      // Verify the save by reloading
+      const updatedTransaction = await this.transactionRepo.findOne({
+        where: { id: transaction.id },
+      });
+      
+      if (updatedTransaction?.certificatePath === fullPublicUrl) {
+        this.logger.log(`[CertificatesService] ✅ Verified: Certificate path saved to transaction ${transaction.displayCode}: ${fullPublicUrl}`);
+      } else {
+        this.logger.error(`[CertificatesService] ❌ FAILED: Certificate path NOT saved to transaction ${transaction.displayCode}`);
+        throw new Error(`Failed to save certificate path to transaction ${transaction.id}`);
+      }
 
       // ✅ ALSO save certificatePath (full URL) to investments table
       // If investmentId is provided, update that specific investment
@@ -221,9 +238,23 @@ export class CertificatesService {
         }
 
         if (investment) {
-          investment.certificatePath = fullPublicUrl;
-          await this.investmentRepo.save(investment);
-          this.logger.log(`[CertificatesService] 💾 Saved certificate path (full URL) to investment ${investment.displayCode} (${investment.id}): ${fullPublicUrl}`);
+          // Use update() for more reliable save
+          await this.investmentRepo.update(
+            { id: investment.id },
+            { certificatePath: fullPublicUrl }
+          );
+          
+          // Verify the save by reloading
+          const updatedInvestment = await this.investmentRepo.findOne({
+            where: { id: investment.id },
+          });
+          
+          if (updatedInvestment?.certificatePath === fullPublicUrl) {
+            this.logger.log(`[CertificatesService] ✅ Verified: Certificate path saved to investment ${investment.displayCode} (${investment.id}): ${fullPublicUrl}`);
+          } else {
+            this.logger.error(`[CertificatesService] ❌ FAILED: Certificate path NOT saved to investment ${investment.displayCode} (${investment.id})`);
+            throw new Error(`Failed to save certificate path to investment ${investment.id}`);
+          }
         } else {
           this.logger.warn(`[CertificatesService] ⚠️ Investment not found for userId=${transaction.userId}, propertyId=${transaction.propertyId}, investmentId=${investmentId || 'N/A'}`);
         }

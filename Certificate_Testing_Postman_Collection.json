@@ -1,0 +1,160 @@
+{
+	"info": {
+		"name": "Certificate Testing - Investment PDF to Neon",
+		"description": "Test endpoints to verify certificate generation and saving to Neon database",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Check Certificate in Database",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/certificates/test/check/:transactionId",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"certificates",
+						"test",
+						"check",
+						":transactionId"
+					],
+					"variable": [
+						{
+							"key": "transactionId",
+							"value": "TXN-000001",
+							"description": "Transaction ID (UUID) or Display Code (e.g., TXN-000001)"
+						}
+					]
+				},
+				"description": "Check if certificate path is saved in Neon database for a transaction and investment"
+			},
+			"response": []
+		},
+		{
+			"name": "2. Manually Generate Certificate",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/certificates/test/generate/:transactionId",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"certificates",
+						"test",
+						"generate",
+						":transactionId"
+					],
+					"variable": [
+						{
+							"key": "transactionId",
+							"value": "TXN-000001",
+							"description": "Transaction ID (UUID) or Display Code (e.g., TXN-000001)"
+						}
+					]
+				},
+				"description": "Manually trigger certificate generation and verify it saves to Neon database. Returns detailed info about what was saved."
+			},
+			"response": []
+		},
+		{
+			"name": "3. Get Transaction Certificate (Auto-generate if missing)",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/certificates/transactions/:transactionId",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"certificates",
+						"transactions",
+						":transactionId"
+					],
+					"variable": [
+						{
+							"key": "transactionId",
+							"value": "TXN-000001",
+							"description": "Transaction ID (UUID) or Display Code"
+						}
+					]
+				},
+				"description": "Get transaction certificate PDF URL. Auto-generates if certificate doesn't exist."
+			},
+			"response": []
+		},
+		{
+			"name": "4. Get Investment by Transaction",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/investments?transactionId=:transactionId",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"investments"
+					],
+					"query": [
+						{
+							"key": "transactionId",
+							"value": ":transactionId",
+							"description": "Transaction ID to find related investment"
+						}
+					]
+				},
+				"description": "Find investment related to a transaction to check certificatePath"
+			},
+			"response": []
+		},
+		{
+			"name": "5. Get All Investments for User",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/investments?userId=:userId",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"investments"
+					],
+					"query": [
+						{
+							"key": "userId",
+							"value": ":userId",
+							"description": "User ID (UUID) or Display Code"
+						}
+					]
+				},
+				"description": "Get all investments for a user to check certificatePath values"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3000",
+			"type": "string"
+		}
+	]
+}
+
