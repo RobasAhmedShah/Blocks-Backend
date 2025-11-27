@@ -1,12 +1,17 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Logger } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { SendNotificationDto } from '../notifications/dto/send-notification.dto';
 
 @Controller('admin')
 export class AdminController {
+  private readonly logger = new Logger(AdminController.name);
+
   constructor(
     private readonly adminService: AdminService,
     private readonly organizationsService: OrganizationsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   @Get('users')
@@ -26,6 +31,36 @@ export class AdminController {
   @Post('organizations')
   createOrganization(@Body() body: any) {
     return this.organizationsService.createWithAdmin(body);
+  }
+
+  // Send notifications to users
+  @Post('notifications/send')
+  async sendNotifications(@Body() dto: SendNotificationDto) {
+    // Log received data for debugging
+    this.logger.log('Received notification request:', {
+      userIds: dto.userIds,
+      userIdsType: typeof dto.userIds,
+      isArray: Array.isArray(dto.userIds),
+      title: dto.title,
+      message: dto.message,
+      category: dto.category,
+    });
+
+    // Ensure userIds is an array
+    const userIdsArray = Array.isArray(dto.userIds) ? dto.userIds : (dto.userIds ? [dto.userIds] : []);
+
+    if (userIdsArray.length === 0) {
+      throw new Error('At least one user ID is required');
+    }
+
+    return this.notificationsService.sendNotificationsToUsers(
+      userIdsArray,
+      dto.title,
+      dto.message,
+      dto.category,
+      dto.propertyId,
+      dto.customUrl,
+    );
   }
 
   @Get('organizations')

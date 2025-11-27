@@ -8,12 +8,14 @@ import { Wallet } from '../wallet/entities/wallet.entity';
 import { KycVerification } from '../kyc/entities/kyc-verification.entity';
 import { Portfolio } from '../portfolio/entities/portfolio.entity';
 import { OrganizationsModule } from '../organizations/organizations.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, Wallet, KycVerification, Portfolio]),
     AdminAnalyticsModule,
     OrganizationsModule,
+    NotificationsModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

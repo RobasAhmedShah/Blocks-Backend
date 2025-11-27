@@ -278,4 +278,108 @@ export class NotificationsService {
 
     return { count: result.affected || 0 };
   }
+
+  /**
+   * Map category to route URL
+   */
+  private mapCategoryToUrl(category: string, propertyId?: string, customUrl?: string): string {
+    switch (category) {
+      case 'properties':
+        return '/properties';
+      case 'property-detail':
+        if (!propertyId) {
+          throw new Error('propertyId is required for property-detail category');
+        }
+        return `/properties/${propertyId}`;
+      case 'portfolio':
+        return '/notifications?context=portfolio';
+      case 'wallet':
+        return '/notifications?context=wallet';
+      case 'notifications':
+        return '/notifications';
+      case 'custom':
+        if (!customUrl) {
+          throw new Error('customUrl is required for custom category');
+        }
+        return customUrl;
+      default:
+        return '/notifications';
+    }
+  }
+
+  /**
+   * Send notifications to multiple users (admin function)
+   */
+  async sendNotificationsToUsers(
+    userIds: string[],
+    title: string,
+    message: string,
+    category: string,
+    propertyId?: string,
+    customUrl?: string,
+  ): Promise<{ success: boolean; sent: number; failed: number; errors: string[] }> {
+    // Validate and ensure userIds is an array
+    if (!userIds) {
+      throw new Error('userIds is required');
+    }
+
+    // Convert to array if it's not already
+    const userIdsArray = Array.isArray(userIds) ? userIds : [userIds];
+    
+    if (userIdsArray.length === 0) {
+      throw new Error('At least one user ID is required');
+    }
+
+    this.logger.log(`Sending notifications to ${userIdsArray.length} user(s)`);
+
+    const errors: string[] = [];
+    let sent = 0;
+    let failed = 0;
+
+    // Map category to URL
+    let url: string;
+    try {
+      url = this.mapCategoryToUrl(category, propertyId, customUrl);
+    } catch (error: any) {
+      throw new Error(`Invalid notification category: ${error.message}`);
+    }
+
+    // Prepare notification data
+    const notificationData: any = {
+      type: category,
+      url,
+    };
+
+    // Add property info if property-detail category
+    if (category === 'property-detail' && propertyId) {
+      notificationData.propertyId = propertyId;
+      notificationData.propertyDisplayCode = propertyId; // Can be enhanced to fetch actual displayCode
+    }
+
+    // Queue notification for each user
+    for (const userId of userIdsArray) {
+      try {
+        await this.queueNotification({
+          userId,
+          title,
+          message,
+          data: notificationData,
+        });
+        sent++;
+        this.logger.log(`Notification queued for user ${userId}`);
+      } catch (error: any) {
+        failed++;
+        const errorMsg = `Failed to queue notification for user ${userId}: ${error.message}`;
+        errors.push(errorMsg);
+        this.logger.error(errorMsg);
+      }
+    }
+
+    return {
+      success: failed === 0,
+      sent,
+      failed,
+      errors,
+    };
+  }
 }
