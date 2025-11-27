@@ -195,7 +195,7 @@ export class MobilePropertiesService {
         projectsCompleted: 0, // TODO: Count completed properties for this organization
       },
       features: this.extractFeatures(property.features),
-      documents: this.extractDocuments(property.documents),
+      documents: this.extractDocuments(property.documents, property.legalDocPath),
       type: property.type || 'residential',
       slug: property.slug || '',
       createdAt: property.createdAt,
@@ -203,34 +203,97 @@ export class MobilePropertiesService {
     };
   }
 
-  private extractDocuments(documents: any): any[] {
-    if (!documents) return [];
+  private extractDocuments(documents: any, legalDocPath?: string | null): any[] {
+    const docArray: any[] = [];
     
-    // If documents is already an array, return it
+    // If documents is already an array, transform it
     if (Array.isArray(documents)) {
-      return documents.map((doc) => ({
-        name: doc.name || 'Document',
-        type: doc.type || 'PDF',
-        verified: doc.verified !== undefined ? doc.verified : true,
-        url: doc.url || null,
-      }));
+      documents.forEach((doc) => {
+        if (doc && (doc.url || doc.name)) {
+          docArray.push({
+            name: doc.name || 'Document',
+            type: doc.type || (doc.url?.toLowerCase().endsWith('.pdf') ? 'PDF' : 'Document'),
+            verified: doc.verified !== undefined ? doc.verified : true,
+            url: doc.url || null,
+          });
+        }
+      });
     }
-    
-    // If documents is an object, try to extract array
-    if (typeof documents === 'object') {
-      // Check if it has a 'items' or 'list' property
-      const docArray = documents.items || documents.list || documents.docs || [];
-      if (Array.isArray(docArray)) {
-        return docArray.map((doc) => ({
-          name: doc.name || 'Document',
-          type: doc.type || 'PDF',
-          verified: doc.verified !== undefined ? doc.verified : true,
-          url: doc.url || null,
-        }));
+    // If documents is an object (backend format: { brochure: {...}, legalDocPath: {...} })
+    else if (documents && typeof documents === 'object' && !Array.isArray(documents)) {
+      // Check if it has a 'items', 'list', or 'docs' property (nested array)
+      const nestedArray = documents.items || documents.list || documents.docs;
+      if (Array.isArray(nestedArray)) {
+        nestedArray.forEach((doc) => {
+          if (doc && (doc.url || doc.name)) {
+            docArray.push({
+              name: doc.name || 'Document',
+              type: doc.type || (doc.url?.toLowerCase().endsWith('.pdf') ? 'PDF' : 'Document'),
+              verified: doc.verified !== undefined ? doc.verified : true,
+              url: doc.url || null,
+            });
+          }
+        });
+      } else {
+        // Iterate over object keys (brochure, legalDocPath, etc.)
+        Object.keys(documents).forEach(key => {
+          const doc = documents[key];
+          
+          // Skip if the value is null or not an object
+          if (!doc || typeof doc !== 'object') {
+            return;
+          }
+
+          // Handle document object structure
+          if (doc.url || doc.name) {
+            docArray.push({
+              name: doc.name || this.formatDocumentName(key),
+              type: doc.type || (doc.url?.toLowerCase().endsWith('.pdf') ? 'PDF' : 'Document'),
+              verified: doc.verified !== undefined ? doc.verified : true,
+              url: doc.url || null,
+            });
+          } else if (typeof doc === 'string') {
+            // If the value is a string (like legalDocPath), treat it as a URL
+            docArray.push({
+              name: this.formatDocumentName(key),
+              type: 'PDF',
+              verified: true,
+              url: doc,
+            });
+          }
+        });
       }
     }
     
-    return [];
+    // Also check for legalDocPath field if it exists separately
+    if (legalDocPath && typeof legalDocPath === 'string') {
+      // Check if legalDocPath is already in documents
+      const hasLegalDoc = docArray.some(doc => 
+        doc.url === legalDocPath || 
+        doc.name.toLowerCase().includes('legal')
+      );
+      
+      if (!hasLegalDoc) {
+        docArray.push({
+          name: 'Legal Document',
+          type: 'PDF',
+          verified: true,
+          url: legalDocPath,
+        });
+      }
+    }
+    
+    return docArray;
+  }
+
+  private formatDocumentName(key: string): string {
+    // Convert camelCase or snake_case to readable format
+    // e.g., "brochure" -> "Brochure", "legalDocPath" -> "Legal Doc Path"
+    return key
+      .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+      .replace(/_/g, ' ') // Replace underscores with spaces
+      .replace(/^./, (str) => str.toUpperCase()) // Capitalize first letter
+      .trim();
   }
 
   private extractImages(images: any): string[] {
