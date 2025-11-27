@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Client } from '@upstash/qstash';
@@ -255,5 +255,27 @@ export class NotificationsService {
       order: { createdAt: 'DESC' },
       take: 50,
     });
+  }
+
+  async markNotificationAsRead(notificationId: string, userId: string): Promise<Notification> {
+    const notification = await this.notificationRepo.findOne({
+      where: { id: notificationId, userId },
+    });
+
+    if (!notification) {
+      throw new NotFoundException('Notification not found');
+    }
+
+    notification.read = true;
+    return this.notificationRepo.save(notification);
+  }
+
+  async markAllNotificationsAsRead(userId: string): Promise<{ count: number }> {
+    const result = await this.notificationRepo.update(
+      { userId, read: false },
+      { read: true }
+    );
+
+    return { count: result.affected || 0 };
   }
 }

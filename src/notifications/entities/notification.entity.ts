@@ -37,6 +37,9 @@ export class Notification {
   @Column({ type: 'varchar', length: 50, nullable: true })
   platform?: 'expo' | 'web' | null;
 
+  @Column({ type: 'boolean', default: false })
+  read: boolean;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 }

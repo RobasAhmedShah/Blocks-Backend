@@ -401,29 +401,10 @@ export class CertificatesService {
       templateData,
     );
 
-    // Generate PDF
-    const pdfBuffer = await this.pdfService.generateFromHtml(html);
-
-    // Upload to Supabase
-    const filePath = `portfolio/${userId}/${actualPropertyId}.pdf`;
-    const { path: uploadedPath } = await this.supabaseService.uploadCertificate(
-      filePath,
-      pdfBuffer,
-    );
-
-    // ✅ Get full public URL for saving in database (if needed)
-    const fullPublicUrl = this.supabaseService.getCertificatePublicUrl(uploadedPath);
-    this.logger.log(`[CertificatesService] 🔗 Full public URL: ${fullPublicUrl}`);
-
-    // Generate signed URL
-    const signedUrl = await this.supabaseService.createSignedUrl(uploadedPath);
-
-    this.logger.log(`Portfolio summary certificate generated: ${fullPublicUrl}`);
-
-    return {
-      certificatePath: fullPublicUrl, // Return full URL
-      signedUrl,
-    };
+    // Generate PDF using PDFKit (HTML to PDF conversion not available)
+    // TODO: Implement HTML to PDF conversion using PDFKit or alternative library
+    this.logger.warn('Portfolio summary PDF generation requires HTML to PDF conversion which is not currently implemented.');
+    throw new Error('Portfolio summary PDF generation is not available. Please use transaction certificate generation instead.');
   }
 
   /**

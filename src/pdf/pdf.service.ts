@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as puppeteer from 'puppeteer';
 import * as https from 'https';
 import * as http from 'http';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -49,54 +48,12 @@ export class PdfService {
 
   /**
    * Generate PDF from HTML string
+   * NOTE: This method is not implemented as we use PDFKit for certificate generation.
+   * If HTML to PDF conversion is needed, consider using a different library or service.
    */
   async generateFromHtml(html: string, options: PdfOptions = {}): Promise<Buffer> {
-    let browser;
-    try {
-      this.logger.log('Launching Puppeteer browser...');
-      
-      browser = await puppeteer.launch({
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-        ],
-      });
-
-      const page = await browser.newPage();
-      
-      // Set content
-      await page.setContent(html, {
-        waitUntil: 'networkidle0',
-      });
-
-      // Generate PDF
-      const pdfBuffer = await page.pdf({
-        format: options.format || 'A4',
-        printBackground: options.printBackground !== false, // Default true
-        margin: options.margin || {
-          top: '20mm',
-          right: '15mm',
-          bottom: '20mm',
-          left: '15mm',
-        },
-      });
-
-      this.logger.log(`PDF generated successfully (${pdfBuffer.length} bytes)`);
-      
-      return Buffer.from(pdfBuffer);
-    } catch (error) {
-      this.logger.error('Error generating PDF:', error);
-      throw new Error(`Failed to generate PDF: ${error.message}`);
-    } finally {
-      if (browser) {
-        await browser.close();
-        this.logger.log('Browser closed');
-      }
-    }
+    this.logger.warn('generateFromHtml is not implemented. Use generateCertificate for PDF generation.');
+    throw new Error('HTML to PDF conversion is not available. Use generateCertificate method instead.');
   }
 
   /**

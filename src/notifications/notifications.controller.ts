@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, HttpCode, HttpStatus, Req, Logger } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, UseGuards, HttpCode, HttpStatus, Req, Logger, NotFoundException, Param } from '@nestjs/common';
 import type { Request } from 'express';
 import { NotificationsService } from './notifications.service';
 import { RegisterExpoTokenDto } from './dto/register-expo-token.dto';
@@ -9,12 +9,16 @@ import { QStashSignatureGuard } from './guards/qstash-signature.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { User } from '../admin/entities/user.entity';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('api/notifications')
 export class NotificationsController {
   private readonly logger = new Logger(NotificationsController.name);
 
-  constructor(private readonly notificationsService: NotificationsService) {}
+  constructor(
+    private readonly notificationsService: NotificationsService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post('process')
   @Public() // QStash calls this endpoint, so it needs to be public
@@ -69,11 +73,55 @@ export class NotificationsController {
     return { success: true, message: 'Web push subscription registered successfully' };
   }
 
+  @Post('register-web-push/:userId')
+  @Public()
+  async registerWebPushByUserId(
+    @Body() dto: RegisterWebPushDto,
+    @Param('userId') userId: string,
+  ) {
+    await this.notificationsService.registerWebPush(userId, dto.subscription);
+    return { success: true, message: 'Web push subscription registered successfully' };
+  }
+
   @Get()
   @UseGuards(JwtAuthGuard)
   async getUserNotifications(@CurrentUser() user: User) {
     const notifications = await this.notificationsService.getUserNotifications(user.id);
     return { notifications };
+  }
+
+  @Get('user/:userId')
+  @Public()
+  async getUserNotificationsByUserId(@Param('userId') userId: string) {
+    const notifications = await this.notificationsService.getUserNotifications(userId);
+    return { notifications };
+  }
+
+  @Patch('mark-read/:notificationId/user/:userId')
+  @Public()
+  async markNotificationAsRead(
+    @Param('notificationId') notificationId: string,
+    @Param('userId') userId: string,
+  ) {
+    const notification = await this.notificationsService.markNotificationAsRead(notificationId, userId);
+    return { success: true, notification };
+  }
+
+  @Patch('mark-all-read/user/:userId')
+  @Public()
+  async markAllNotificationsAsRead(@Param('userId') userId: string) {
+    const result = await this.notificationsService.markAllNotificationsAsRead(userId);
+    return { success: true, ...result };
+  }
+
+  @Get('vapid-public-key')
+  @Public()
+  async getVapidPublicKey() {
+    const publicKey = this.configService.get<string>('VAPID_PUBLIC_KEY');
+    if (!publicKey) {
+      throw new NotFoundException('VAPID public key not configured');
+    }
+    return { publicKey };
   }
 }
 
