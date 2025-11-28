@@ -146,3 +146,4 @@ After setting up ngrok and updating `.env`, you should see:
 
 **Note:** This is only needed for **local testing**. In production (Vercel), QStash will work automatically! 🎉
 
+

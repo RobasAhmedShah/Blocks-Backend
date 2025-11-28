@@ -86,3 +86,4 @@ If you still don't receive notifications after restarting:
 - ✅ Token already registered in database
 - ⏳ **Next:** Restart backend and test!
 
+

@@ -92,3 +92,4 @@ COMMENT ON COLUMN notifications.platform IS 'Platform where notification was sen
 -- WHERE tc.constraint_type = 'FOREIGN KEY'
 --   AND tc.table_name = 'notifications';
 
+
