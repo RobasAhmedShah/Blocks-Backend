@@ -50,7 +50,10 @@ export class OrganizationAdminsService {
   }
 
   async login(email: string, password: string) {
-    const admin = await this.orgAdminRepo.findOne({ where: { email, isActive: true } });
+    const admin = await this.orgAdminRepo.findOne({ 
+      where: { email, isActive: true },
+      select: ['id', 'email', 'password', 'fullName', 'organizationId', 'role', 'isActive', 'lastLogin', 'createdAt', 'updatedAt'], // Explicitly select fields (exclude webPushSubscription for login)
+    });
     if (!admin) throw new NotFoundException('Invalid credentials');
     const ok = await bcrypt.compare(password, admin.password);
     if (!ok) throw new NotFoundException('Invalid credentials');

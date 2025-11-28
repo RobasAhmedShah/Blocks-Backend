@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { User } from '../../admin/entities/user.entity';
+import { OrganizationAdmin } from '../../organization-admins/entities/organization-admin.entity';
 
 @Entity('notifications')
 export class Notification {
@@ -15,12 +16,24 @@ export class Notification {
   id: string;
 
   @Index()
-  @Column({ type: 'uuid' })
-  userId: string;
+  @Column({ type: 'uuid', nullable: true })
+  userId: string | null;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'userId' })
-  user: User;
+  user: User | null;
+
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  organizationAdminId: string | null;
+
+  @ManyToOne(() => OrganizationAdmin, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'organizationAdminId' })
+  organizationAdmin: OrganizationAdmin | null;
+
+  @Index()
+  @Column({ type: 'varchar', length: 20, default: 'user' })
+  recipientType: 'user' | 'org_admin' | 'blocks_admin';
 
   @Column({ type: 'varchar', length: 255 })
   title: string;

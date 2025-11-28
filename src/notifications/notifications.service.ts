@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { CreateNotificationJobDto } from './dto/create-notification-job.dto';
 import { Notification } from './entities/notification.entity';
 import { User } from '../admin/entities/user.entity';
+import { OrganizationAdmin } from '../organization-admins/entities/organization-admin.entity';
 import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import * as webPush from 'web-push';
 
@@ -22,6 +23,8 @@ export class NotificationsService {
     private readonly notificationRepo: Repository<Notification>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(OrganizationAdmin)
+    private readonly orgAdminRepo: Repository<OrganizationAdmin>,
   ) {
     // Initialize QStash client
     const qstashToken = this.configService.get<string>('QSTASH_TOKEN');
@@ -208,6 +211,7 @@ export class NotificationsService {
       // Save notification record
       await this.notificationRepo.save({
         userId,
+        recipientType: 'user',
         title,
         message,
         data: data || null,
@@ -381,5 +385,191 @@ export class NotificationsService {
       failed,
       errors,
     };
+  }
+
+  /**
+   * Send notification to organization admin (web push only)
+   */
+  async sendNotificationToOrgAdmin(
+    organizationAdminId: string,
+    title: string,
+    message: string,
+    data?: any,
+  ): Promise<void> {
+    try {
+      this.logger.log(`Sending notification to organization admin ${organizationAdminId}`);
+      
+      // Fetch organization admin with web push subscription
+      const orgAdmin = await this.orgAdminRepo.findOne({
+        where: { id: organizationAdminId },
+        select: ['id', 'webPushSubscription', 'email'],
+      });
+
+      if (!orgAdmin) {
+        this.logger.warn(`Organization admin ${organizationAdminId} not found`);
+        return;
+      }
+
+      let notificationSent = false;
+      let platform: 'web' | null = null;
+
+      // Send Web Push notification
+      if (orgAdmin.webPushSubscription) {
+        try {
+          const subscription = JSON.parse(orgAdmin.webPushSubscription);
+          const payload = JSON.stringify({
+            title,
+            message,
+            data: data || {},
+          });
+
+          await webPush.sendNotification(subscription, payload);
+          notificationSent = true;
+          platform = 'web';
+          this.logger.log(`Web push notification sent to organization admin ${organizationAdminId}`);
+        } catch (error: any) {
+          this.logger.error(`Failed to send Web push to organization admin ${organizationAdminId}:`, error);
+          if (error.statusCode === 410 || error.statusCode === 404) {
+            orgAdmin.webPushSubscription = null;
+            await this.orgAdminRepo.save(orgAdmin);
+            this.logger.log(`Removed invalid Web Push subscription for organization admin ${organizationAdminId}`);
+          }
+        }
+      } else {
+        this.logger.warn(`Organization admin ${organizationAdminId} has no web push subscription registered`);
+      }
+
+      // Save notification record
+      await this.notificationRepo.save({
+        organizationAdminId,
+        recipientType: 'org_admin',
+        title,
+        message,
+        data: data || null,
+        status: notificationSent ? 'sent' : 'failed',
+        platform,
+      });
+
+      if (!notificationSent) {
+        this.logger.warn(`No notification sent to organization admin ${organizationAdminId} - no valid subscription found`);
+      }
+    } catch (error) {
+      this.logger.error(`Error sending notification to organization admin ${organizationAdminId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send notification to Blocks admin (super admin)
+   */
+  async sendNotificationToBlocksAdmin(
+    title: string,
+    message: string,
+    data?: any,
+  ): Promise<void> {
+    try {
+      this.logger.log('Sending notification to Blocks admin');
+      
+      // Find Blocks admin user (role = 'admin')
+      const blocksAdmin = await this.userRepo.findOne({
+        where: { role: 'admin', isActive: true },
+        select: ['id', 'email', 'webPushSubscription'],
+      });
+
+      if (!blocksAdmin) {
+        this.logger.warn('Blocks admin user not found (no user with role=admin)');
+        return;
+      }
+
+      let notificationSent = false;
+      let platform: 'web' | null = null;
+
+      // Send Web Push notification
+      if (blocksAdmin.webPushSubscription) {
+        try {
+          const subscription = JSON.parse(blocksAdmin.webPushSubscription);
+          const payload = JSON.stringify({
+            title,
+            message,
+            data: data || {},
+          });
+
+          await webPush.sendNotification(subscription, payload);
+          notificationSent = true;
+          platform = 'web';
+          this.logger.log(`Web push notification sent to Blocks admin (${blocksAdmin.email})`);
+        } catch (error: any) {
+          this.logger.error(`Failed to send Web push to Blocks admin:`, error);
+          if (error.statusCode === 410 || error.statusCode === 404) {
+            blocksAdmin.webPushSubscription = null;
+            await this.userRepo.save(blocksAdmin);
+            this.logger.log(`Removed invalid Web Push subscription for Blocks admin`);
+          }
+        }
+      } else {
+        this.logger.warn(`Blocks admin (${blocksAdmin.email}) has no web push subscription registered`);
+      }
+
+      // Save notification record
+      await this.notificationRepo.save({
+        userId: blocksAdmin.id,
+        recipientType: 'blocks_admin',
+        title,
+        message,
+        data: data || null,
+        status: notificationSent ? 'sent' : 'failed',
+        platform,
+      });
+
+      if (!notificationSent) {
+        this.logger.warn(`No notification sent to Blocks admin - no valid subscription found`);
+      }
+    } catch (error) {
+      this.logger.error(`Error sending notification to Blocks admin:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Register web push subscription for organization admin
+   */
+  async registerOrgAdminWebPush(organizationAdminId: string, subscription: any): Promise<OrganizationAdmin> {
+    const orgAdmin = await this.orgAdminRepo.findOne({ where: { id: organizationAdminId } });
+    if (!orgAdmin) {
+      throw new NotFoundException('Organization admin not found');
+    }
+
+    orgAdmin.webPushSubscription = JSON.stringify(subscription);
+    return this.orgAdminRepo.save(orgAdmin);
+  }
+
+  /**
+   * Get notifications for organization admin
+   */
+  async getOrgAdminNotifications(organizationAdminId: string): Promise<Notification[]> {
+    return this.notificationRepo.find({
+      where: { organizationAdminId, recipientType: 'org_admin' },
+      order: { createdAt: 'DESC' },
+      take: 50,
+    });
+  }
+
+  /**
+   * Get notifications for Blocks admin
+   */
+  async getBlocksAdminNotifications(): Promise<Notification[]> {
+    const blocksAdmin = await this.userRepo.findOne({
+      where: { role: 'admin', isActive: true },
+    });
+
+    if (!blocksAdmin) {
+      return [];
+    }
+
+    return this.notificationRepo.find({
+      where: { userId: blocksAdmin.id, recipientType: 'blocks_admin' },
+      order: { createdAt: 'DESC' },
+      take: 50,
+    });
   }
 }
