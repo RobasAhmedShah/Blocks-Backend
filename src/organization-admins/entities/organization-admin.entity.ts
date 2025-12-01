@@ -36,7 +36,7 @@ export class OrganizationAdmin {
   @Column({ type: 'timestamptz', nullable: true })
   passwordChangedAt?: Date | null;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, name: 'webPushSubscription' })
   webPushSubscription?: string | null;
 
   @CreateDateColumn({ type: 'timestamptz' })

@@ -68,6 +68,12 @@ export class AdminController {
     return this.organizationsService.listWithAdmin();
   }
 
+  @Get('notifications')
+  async getBlocksAdminNotifications() {
+    const notifications = await this.notificationsService.getBlocksAdminNotifications();
+    return { success: true, notifications };
+  }
+
   @Patch('organizations/:id')
   updateOrganization(@Param('id') id: string, @Body() body: any) {
     return this.organizationsService.updateAdminManaged(id, body);

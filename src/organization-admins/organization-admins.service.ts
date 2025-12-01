@@ -19,10 +19,16 @@ export class OrganizationAdminsService {
     const org = await this.orgRepo.findOne({ where: { id: organizationId } });
     if (!org) throw new NotFoundException('Organization not found');
 
-    const existing = await this.orgAdminRepo.findOne({ where: { organizationId } });
+    const existing = await this.orgAdminRepo.findOne({ 
+      where: { organizationId },
+      select: ['id', 'organizationId'],
+    });
     if (existing) throw new BadRequestException('Organization already has an admin');
 
-    const emailUsed = await this.orgAdminRepo.findOne({ where: { email } });
+    const emailUsed = await this.orgAdminRepo.findOne({ 
+      where: { email },
+      select: ['id', 'email'],
+    });
     if (emailUsed) throw new BadRequestException('Email already in use');
 
     const hash = await bcrypt.hash(plainPassword, 12);
@@ -39,7 +45,10 @@ export class OrganizationAdminsService {
   }
 
   async resetPasswordByOrgId(organizationId: string, newPlainPassword?: string) {
-    const admin = await this.orgAdminRepo.findOne({ where: { organizationId } });
+    const admin = await this.orgAdminRepo.findOne({ 
+      where: { organizationId },
+      select: ['id', 'organizationId', 'email', 'password', 'passwordChangedAt'],
+    });
     if (!admin) throw new NotFoundException('Organization admin not found');
     const temp = newPlainPassword ?? this.generateTempPassword();
     const hash = await bcrypt.hash(temp, 12);
@@ -64,7 +73,10 @@ export class OrganizationAdminsService {
   }
 
   async changePassword(adminId: string, currentPassword: string, newPassword: string) {
-    const admin = await this.orgAdminRepo.findOne({ where: { id: adminId } });
+    const admin = await this.orgAdminRepo.findOne({ 
+      where: { id: adminId },
+      select: ['id', 'password', 'passwordChangedAt'],
+    });
     if (!admin) throw new NotFoundException('Admin not found');
     const ok = await bcrypt.compare(currentPassword, admin.password);
     if (!ok) throw new BadRequestException('Current password is incorrect');

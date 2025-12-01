@@ -29,7 +29,7 @@ export class InvestmentNotificationListener {
   async handleInvestmentCompleted(event: InvestmentCompletedEvent) {
     try {
       this.logger.log(
-        `[InvestmentNotificationListener] 📨 Processing investment notification for investment: ${event.investmentDisplayCode}`,
+        `[InvestmentNotificationListener] 📨 Event received! Processing investment notification for investment: ${event.investmentDisplayCode}, user: ${event.userDisplayCode}, property: ${event.propertyDisplayCode}`,
       );
 
       // Fetch property to get property title
@@ -58,6 +58,7 @@ export class InvestmentNotificationListener {
       try {
         const orgAdmin = await this.orgAdminRepo.findOne({
           where: { organizationId: event.organizationId, isActive: true },
+          select: ['id', 'organizationId', 'email', 'fullName', 'isActive'],
         });
 
         if (orgAdmin) {

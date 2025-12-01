@@ -75,7 +75,10 @@ export class OrganizationsService {
 
   async listWithAdmin() {
     const orgs = await this.orgRepo.find();
-    const admins = await this.orgAdminRepo.find();
+    // Explicitly select fields to avoid issues if webPushSubscription column doesn't exist yet
+    const admins = await this.orgAdminRepo.find({
+      select: ['id', 'organizationId', 'email', 'fullName', 'role', 'isActive', 'lastLogin', 'createdAt', 'updatedAt'],
+    });
     const orgIdToAdmin: Record<string, OrganizationAdmin> = {};
     admins.forEach(a => { orgIdToAdmin[a.organizationId] = a; });
     return orgs.map(o => ({
@@ -109,7 +112,11 @@ export class OrganizationsService {
   async resetOrgAdminPassword(idOrCode: string, newPassword?: string) {
     const org = await this.findByIdOrDisplayCode(idOrCode);
     if (!org) throw new Error('Organization not found');
-    const admin = await this.orgAdminRepo.findOne({ where: { organizationId: org.id } });
+    // Explicitly select fields to avoid issues if webPushSubscription column doesn't exist yet
+    const admin = await this.orgAdminRepo.findOne({ 
+      where: { organizationId: org.id },
+      select: ['id', 'organizationId', 'email', 'password', 'fullName', 'role', 'isActive', 'lastLogin', 'passwordChangedAt', 'createdAt', 'updatedAt'],
+    });
     if (!admin) throw new Error('Organization admin not found');
     const temp = newPassword || Math.random().toString(36).slice(-8) + '!A1';
     admin.password = await bcrypt.hash(temp, 12);

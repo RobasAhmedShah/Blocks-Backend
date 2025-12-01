@@ -31,6 +31,10 @@ tags:
     description: Comprehensive dashboard statistics and growth analytics with dynamic filtering.
   - name: Certificates (Mobile)
     description: PDF certificate generation and retrieval for mobile app.
+  - name: Notifications
+    description: Push notification management for users, organization admins, and Blocks admin.
+  - name: Organization Admin Auth
+    description: Organization admin authentication and web push registration.
 
 paths:
   # ----------------------------------------------
@@ -327,6 +331,284 @@ paths:
                 type: object
                 properties:
                   success: { type: boolean }
+
+  /org/auth/register-web-push/{adminId}:
+    post:
+      tags: [Organization Admin Auth]
+      summary: Register web push subscription for organization admin
+      parameters:
+        - name: adminId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subscription:
+                  type: object
+                  description: Web push subscription object
+      responses:
+        '200':
+          description: Web push subscription registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  adminId: { type: string }
+
+  /org/auth/notifications/{adminId}:
+    get:
+      tags: [Organization Admin Auth]
+      summary: Get notifications for organization admin
+      parameters:
+        - name: adminId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+
+  # ----------------------------------------------
+  # Notifications
+  # ----------------------------------------------
+  /api/notifications/register-expo-token:
+    post:
+      tags: [Notifications]
+      summary: Register Expo push token for mobile app user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+      responses:
+        '200':
+          description: Expo token registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+
+  /api/notifications/register-web-push:
+    post:
+      tags: [Notifications]
+      summary: Register web push subscription (JWT protected)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subscription:
+                  type: object
+                  description: Web push subscription object
+      responses:
+        '200':
+          description: Web push subscription registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+
+  /api/notifications/register-web-push/{userId}:
+    post:
+      tags: [Notifications]
+      summary: Register web push subscription by user ID (public endpoint)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subscription:
+                  type: object
+                  description: Web push subscription object
+      responses:
+        '200':
+          description: Web push subscription registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: Get user notifications (JWT protected)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of user notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+
+  /api/notifications/user/{userId}:
+    get:
+      tags: [Notifications]
+      summary: Get user notifications by user ID (public endpoint)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of user notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+
+  /api/notifications/mark-read/{notificationId}/user/{userId}:
+    patch:
+      tags: [Notifications]
+      summary: Mark notification as read
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  notification:
+                    $ref: '#/components/schemas/Notification'
+
+  /api/notifications/mark-all-read/user/{userId}:
+    patch:
+      tags: [Notifications]
+      summary: Mark all notifications as read for a user
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: All notifications marked as read
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  count: { type: integer }
+
+  /api/notifications/vapid-public-key:
+    get:
+      tags: [Notifications]
+      summary: Get VAPID public key for web push notifications
+      responses:
+        '200':
+          description: VAPID public key
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  publicKey: { type: string }
+
+  /admin/notifications/send:
+    post:
+      tags: [Notifications]
+      summary: Send custom notifications to users (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userIds, title, message, category]
+              properties:
+                userIds:
+                  type: array
+                  items: { type: string }
+                title: { type: string }
+                message: { type: string }
+                category: 
+                  type: string
+                  enum: [properties, property-detail, portfolio, wallet, notifications, custom]
+                propertyId: { type: string }
+                customUrl: { type: string }
+      responses:
+        '200':
+          description: Notifications sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  sent: { type: integer }
+                  failed: { type: integer }
+                  errors: 
+                    type: array
+                    items: { type: string }
 
   # ----------------------------------------------
   # Users (Direct Management)
@@ -3060,6 +3342,43 @@ components:
             $ref: '#/components/schemas/Investment'
         analytics:
           $ref: '#/components/schemas/InvestmentAnalytics'
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+          nullable: true
+        organizationAdminId:
+          type: string
+          format: uuid
+          nullable: true
+        recipientType:
+          type: string
+          enum: [user, org_admin, blocks_admin]
+        title:
+          type: string
+        message:
+          type: string
+        data:
+          type: object
+          nullable: true
+        status:
+          type: string
+          enum: [pending, sent, failed]
+        platform:
+          type: string
+          enum: [expo, web]
+          nullable: true
+        read:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
 
     OrganizationInvestmentAnalytics:
       type: object
