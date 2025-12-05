@@ -31,6 +31,7 @@ import { SupabaseModule } from './supabase/supabase.module';
 import { PdfModule } from './pdf/pdf.module';
 import { CertificatesModule } from './certificates/certificates.module';
 import { MobileCertificatesModule } from './mobile-certificates/mobile-certificates.module';
+import { MobileKycModule } from './mobile-kyc/mobile-kyc.module';
 import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
@@ -70,6 +71,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     PdfModule, // PDF generation service
     CertificatesModule, // Certificate generation service
     MobileCertificatesModule, // Mobile certificate endpoints
+    MobileKycModule, // Mobile KYC endpoints
     NotificationsModule, // Push notifications system
   ],
   controllers: [AppController],

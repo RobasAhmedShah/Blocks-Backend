@@ -4,9 +4,13 @@ import { KycController } from './kyc.controller';
 import { KycService } from './kyc.service';
 import { KycVerification } from './entities/kyc-verification.entity';
 import { User } from '../admin/entities/user.entity';
+import { SupabaseModule } from '../supabase/supabase.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([KycVerification, User])],
+  imports: [
+    TypeOrmModule.forFeature([KycVerification, User]),
+    SupabaseModule,
+  ],
   controllers: [KycController],
   providers: [KycService],
   exports: [KycService],
