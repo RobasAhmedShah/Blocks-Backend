@@ -32,6 +32,12 @@ import { PdfModule } from './pdf/pdf.module';
 import { CertificatesModule } from './certificates/certificates.module';
 import { MobileCertificatesModule } from './mobile-certificates/mobile-certificates.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ActivitiesModule } from './activities/activities.module';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ActivityLoggingInterceptor } from './activities/interceptors/activity-logging.interceptor';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Property } from './properties/entities/property.entity';
+import { User } from './admin/entities/user.entity';
 
 @Module({
   imports: [
@@ -43,6 +49,7 @@ import { NotificationsModule } from './notifications/notifications.module';
       http: process.env.NODE_ENV !== 'production'
     }),
     DatabaseModule,
+    TypeOrmModule.forFeature([Property, User]), // Make Property and User repositories available for global interceptor
     EventEmitterModule.forRoot(), // Event-driven architecture
     AdminModule,
     OrganizationsModule,
@@ -71,8 +78,15 @@ import { NotificationsModule } from './notifications/notifications.module';
     CertificatesModule, // Certificate generation service
     MobileCertificatesModule, // Mobile certificate endpoints
     NotificationsModule, // Push notifications system
+    ActivitiesModule, // Activity logging system
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ActivityLoggingInterceptor,
+    },
+  ],
 })
 export class AppModule {}
