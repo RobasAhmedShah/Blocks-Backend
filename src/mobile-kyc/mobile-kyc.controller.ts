@@ -38,6 +38,31 @@ export class MobileKycController {
       };
     }
 
+    // Check if any documents exist
+    const hasAnyDocuments = !!(kyc.documentFrontUrl || kyc.documentBackUrl || kyc.selfieUrl);
+    
+    // If KYC record exists but:
+    // 1. No documents uploaded at all, OR
+    // 2. Hasn't been submitted (no submittedAt), OR
+    // 3. Status is 'pending' but no submittedAt (defensive check for old/invalid data)
+    // Then treat as not_submitted
+    if (!hasAnyDocuments || !kyc.submittedAt || (kyc.status === 'pending' && !kyc.submittedAt)) {
+      return {
+        id: kyc.id,
+        type: kyc.type,
+        status: 'not_submitted',
+        hasDocuments: {
+          front: !!kyc.documentFrontUrl,
+          back: !!kyc.documentBackUrl,
+          selfie: !!kyc.selfieUrl,
+        },
+      };
+    }
+
+    // Only return pending/verified/rejected if:
+    // - Documents exist AND
+    // - submittedAt is set AND
+    // - Status is valid (pending, verified, or rejected)
     return {
       id: kyc.id,
       type: kyc.type,
@@ -93,9 +118,9 @@ export class MobileKycController {
         throw new BadRequestException('Invalid base64 file data');
       }
 
-      // Validate file size (max 5MB)
-      if (buffer.length > 5 * 1024 * 1024) {
-        throw new BadRequestException('File size exceeds 5MB');
+      // Validate file size (max 20MB - allows for cropped images of any reasonable size)
+      if (buffer.length > 20 * 1024 * 1024) {
+        throw new BadRequestException('File size exceeds 20MB');
       }
 
       if (buffer.length === 0) {

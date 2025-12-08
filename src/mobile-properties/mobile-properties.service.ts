@@ -298,6 +298,31 @@ export class MobilePropertiesService {
 
   private extractImages(images: any): string[] {
     if (!images) return [];
+    
+    // If it's a JSON string, parse it first
+    if (typeof images === 'string') {
+      const trimmed = images.trim();
+      if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+        try {
+          images = JSON.parse(images);
+        } catch (e) {
+          console.warn('[extractImages] Failed to parse JSON:', e);
+          return [];
+        }
+      } else {
+        // Single URL string
+        return [images];
+      }
+    }
+    
+    // If it's an object with urls array: { urls: ["https://..."] }
+    if (typeof images === 'object' && !Array.isArray(images) && images.urls && Array.isArray(images.urls)) {
+      return images.urls
+        .map((url: any) => (typeof url === 'string' ? url : url.url || ''))
+        .filter(Boolean);
+    }
+    
+    // If it's already an array
     if (Array.isArray(images)) {
       return images.map((img) => (typeof img === 'string' ? img : img.url || '')).filter(Boolean);
     }
