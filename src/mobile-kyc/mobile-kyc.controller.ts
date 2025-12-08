@@ -3,13 +3,11 @@ import {
   Get,
   Post,
   Body,
-  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
   BadRequestException,
 } from '@nestjs/common';
-import type { FastifyRequest } from 'fastify';
 import { JwtAuthGuard } from '../mobile-auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { KycService } from '../kyc/kyc.service';
