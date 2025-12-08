@@ -8,6 +8,7 @@ export class SupabaseService implements OnModuleInit {
   private readonly assetsBucket: string;
   private readonly certificatesBucket: string;
   private readonly propertyDocumentsBucket: string;
+  private readonly kycDocumentsBucket: string;
 
   constructor(private configService: ConfigService) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
@@ -31,6 +32,10 @@ export class SupabaseService implements OnModuleInit {
       'SUPABASE_PROPERTY_DOCUMENTS_BUCKET',
       'property-documents',
     );
+    this.kycDocumentsBucket = this.configService.get<string>(
+      'SUPABASE_KYC_DOCUMENTS_BUCKET',
+      'kyc-documents',
+    );
   }
 
   onModuleInit() {
@@ -38,6 +43,7 @@ export class SupabaseService implements OnModuleInit {
     console.log(`Assets bucket: ${this.assetsBucket}`);
     console.log(`Certificates bucket: ${this.certificatesBucket}`);
     console.log(`Property documents bucket: ${this.propertyDocumentsBucket}`);
+    console.log(`KYC documents bucket: ${this.kycDocumentsBucket}`);
   }
 
   /**
@@ -141,6 +147,73 @@ export class SupabaseService implements OnModuleInit {
       return !error && data && data.length > 0;
     } catch (error) {
       return false;
+    }
+  }
+
+  /**
+   * Upload KYC document (image) to Supabase Storage
+   */
+  async uploadKycDocument(
+    userId: string,
+    fileBuffer: Buffer,
+    documentType: 'front' | 'back' | 'selfie',
+    contentType: string = 'image/jpeg',
+  ): Promise<{ path: string; publicUrl: string }> {
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substring(2, 9);
+    const ext = contentType.includes('png') ? 'png' : 'jpg';
+    const filePath = `${userId}/${documentType}-${timestamp}-${randomId}.${ext}`;
+
+    const { data, error } = await this.supabase.storage
+      .from(this.kycDocumentsBucket)
+      .upload(filePath, fileBuffer, {
+        contentType,
+        upsert: false, // Don't overwrite - each upload is unique
+      });
+
+    if (error) {
+      throw new Error(`Failed to upload KYC document: ${error.message}`);
+    }
+
+    // Get public URL (or signed URL for private buckets)
+    const { data: urlData } = this.supabase.storage
+      .from(this.kycDocumentsBucket)
+      .getPublicUrl(filePath);
+
+    return {
+      path: data.path,
+      publicUrl: urlData.publicUrl,
+    };
+  }
+
+  /**
+   * Generate signed URL for KYC document (for private bucket access)
+   */
+  async getKycDocumentSignedUrl(
+    filePath: string,
+    expiresIn: number = 3600, // 1 hour
+  ): Promise<string> {
+    const { data, error } = await this.supabase.storage
+      .from(this.kycDocumentsBucket)
+      .createSignedUrl(filePath, expiresIn);
+
+    if (error) {
+      throw new Error(`Failed to create signed URL: ${error.message}`);
+    }
+
+    return data.signedUrl;
+  }
+
+  /**
+   * Delete KYC document from Supabase Storage
+   */
+  async deleteKycDocument(filePath: string): Promise<void> {
+    const { error } = await this.supabase.storage
+      .from(this.kycDocumentsBucket)
+      .remove([filePath]);
+
+    if (error) {
+      throw new Error(`Failed to delete KYC document: ${error.message}`);
     }
   }
 }

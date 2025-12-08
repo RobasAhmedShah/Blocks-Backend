@@ -122,9 +122,19 @@ export default async function handler(req: any, res: any) {
 // Also, bootstrap locally if not in production (optional)
 if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
   async function bootstrap() {
-    const app = await createNestApp();
-    await app.listen(process.env.PORT || 3000, '0.0.0.0');
-    console.log(`🚀 App listening on port ${process.env.PORT || 3000}`);
+    try {
+      console.log('Starting backend server...');
+      const app = await createNestApp();
+      console.log('App created, starting to listen...');
+      await app.listen(process.env.PORT || 3000, '0.0.0.0');
+      console.log(`🚀 App listening on port ${process.env.PORT || 3000}`);
+    } catch (error) {
+      console.error('Failed to start server:', error);
+      process.exit(1);
+    }
   }
-  bootstrap();
+  bootstrap().catch((error) => {
+    console.error('Bootstrap error:', error);
+    process.exit(1);
+  });
 }
