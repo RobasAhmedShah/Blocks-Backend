@@ -25,13 +25,16 @@ let cachedApp: NestFastifyApplication | null = null;
 async function createNestApp(): Promise<NestFastifyApplication> {
   if (cachedApp) return cachedApp;
 
-  const fastifyInstance = fastify({ logger: false });
+  const fastifyInstance = fastify({ 
+    logger: false,
+    bodyLimit: 20 * 1024 * 1024, // 20MB - allows base64 encoded images in JSON body
+  });
 
   // Register multipart plugin for file uploads
   // This is required for Express interceptors to work with Fastify
   await fastifyInstance.register(multipart, {
     limits: {
-      fileSize: 10 * 1024 * 1024, // 10MB
+      fileSize: 20 * 1024 * 1024, // 20MB - increased to match body limit
     },
   });
 
