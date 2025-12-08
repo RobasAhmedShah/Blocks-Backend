@@ -135,6 +135,16 @@ export class NotificationsService {
       if (user.expoToken) {
         try {
           if (Expo.isExpoPushToken(user.expoToken)) {
+            // Ensure URL is always included in notification data
+            const notificationUrl = data?.url || '/notifications?context=portfolio';
+            
+            this.logger.log(`📤 Sending Expo push to user ${userId}`, {
+              token: user.expoToken.substring(0, 20) + '...',
+              title,
+              message,
+              url: notificationUrl,
+            });
+
             const messages: ExpoPushMessage[] = [
               {
                 to: user.expoToken,
@@ -144,7 +154,7 @@ export class NotificationsService {
                 data: {
                   ...(data || {}),
                   // Ensure URL is included for navigation
-                  url: data?.url || '/notifications?context=portfolio',
+                  url: notificationUrl,
                 },
               },
             ];
