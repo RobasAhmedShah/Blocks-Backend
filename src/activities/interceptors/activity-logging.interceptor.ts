@@ -150,10 +150,12 @@ export class ActivityLoggingInterceptor implements NestInterceptor {
           let finalDescription = description;
           let finalAmount = amount;
 
-          if (response?.data) {
-            const responseStr = JSON.stringify(response.data);
+          // Handle both wrapped and direct response structures
+          let rawResponseData = response?.data || response;
+          if (rawResponseData) {
+            const responseStr = JSON.stringify(rawResponseData);
             if (responseStr.length < 10000) {
-              responseData = response.data;
+              responseData = rawResponseData;
               // NOTE: Don't extract nested data here - keep the full response structure
               // Different endpoints have different structures, so we need to preserve the original
             }
@@ -212,6 +214,53 @@ export class ActivityLoggingInterceptor implements NestInterceptor {
             }
             
             if (enhanced.amount && !finalAmount) finalAmount = enhanced.amount;
+          } else if (endpoint.includes('/mobile/auth/login') || endpoint.includes('/api/mobile/auth/login') || endpoint.includes('/org/auth/login')) {
+            // Always enhance for login to get user info from response
+            finalAction = 'User Logged In';
+            
+            // Log for debugging
+            this.logger.log(`🔐 Login activity detected for endpoint: ${endpoint}`);
+            this.logger.log(`🔐 ResponseData keys: ${responseData ? Object.keys(responseData).join(', ') : 'null'}`);
+            
+            // Extract user info from response for login
+            // Check multiple possible response structures
+            let loggedInUser = responseData?.user || responseData?.data?.user;
+            let loggedInAdmin = responseData?.admin || responseData?.data?.admin;
+            
+            if (loggedInUser) {
+              this.logger.log(`🔐 Found user in response: ${loggedInUser.fullName || loggedInUser.email}`);
+              if (!finalUserId && loggedInUser.id) finalUserId = loggedInUser.id;
+              if (!finalUserName && loggedInUser.fullName) finalUserName = loggedInUser.fullName;
+              if (!finalUserEmail && loggedInUser.email) finalUserEmail = loggedInUser.email;
+              if (finalUserType === 'anonymous' && loggedInUser.role) {
+                finalUserType = loggedInUser.role === 'admin' ? 'admin' : 'user';
+              }
+              // Set description to show user name
+              finalDescription = loggedInUser.fullName || loggedInUser.name || loggedInUser.email || 'User';
+            } else if (loggedInAdmin) {
+              // For org admin login
+              this.logger.log(`🔐 Found admin in response: ${loggedInAdmin.fullName || loggedInAdmin.email}`);
+              if (!orgAdminId && loggedInAdmin.id) orgAdminId = loggedInAdmin.id;
+              if (!finalUserName && loggedInAdmin.fullName) finalUserName = loggedInAdmin.fullName;
+              if (!finalUserEmail && loggedInAdmin.email) finalUserEmail = loggedInAdmin.email;
+              if (finalUserType === 'anonymous') {
+                finalUserType = 'org_admin';
+              }
+              // Set description to show admin name
+              finalDescription = loggedInAdmin.fullName || loggedInAdmin.name || loggedInAdmin.email || 'ORG Admin';
+            } else if (requestBody?.email) {
+              // Fallback: use email from request body if response doesn't have user info
+              this.logger.log(`🔐 Using email from request body: ${requestBody.email}`);
+              finalDescription = requestBody.email;
+            }
+            
+            // If we still don't have a description, use a generic one
+            if (!finalDescription) {
+              finalDescription = endpoint.includes('/org/auth/login') ? 'ORG Admin' : 'User';
+              this.logger.warn(`🔐 No user info found, using fallback: ${finalDescription}`);
+            }
+            
+            this.logger.log(`🔐 Final login activity: action=${finalAction}, description=${finalDescription}, userType=${finalUserType}, userName=${finalUserName}`);
           } else if (responseData && (!finalAction || !finalDescription)) {
             // Enhance action/description from response for other endpoints
             const enhanced = await this.parseEndpointFromResponse(endpoint, method, responseData, user, userName, requestBody);
@@ -225,8 +274,16 @@ export class ActivityLoggingInterceptor implements NestInterceptor {
             // Try to create a meaningful action from endpoint
             finalAction = this.createActionFromEndpoint(endpoint, method);
             if (!finalAction) {
-              // Skip logging if we can't determine a meaningful action
-              return;
+              // For login endpoints, always log even if we couldn't extract user info
+              if (endpoint.includes('/mobile/auth/login') || endpoint.includes('/api/mobile/auth/login') || endpoint.includes('/org/auth/login')) {
+                finalAction = 'User Logged In';
+                if (!finalDescription) {
+                  finalDescription = endpoint.includes('/org/auth/login') ? 'ORG Admin' : 'User';
+                }
+              } else {
+                // Skip logging if we can't determine a meaningful action
+                return;
+              }
             }
           }
 
@@ -256,8 +313,14 @@ export class ActivityLoggingInterceptor implements NestInterceptor {
                 this.logger.log(`📊 responseData.data keys: ${Object.keys(responseData.data).join(', ')}`);
               }
             }
+            if (endpoint.includes('/mobile/auth/login') || endpoint.includes('/api/mobile/auth/login') || endpoint.includes('/org/auth/login')) {
+              this.logger.log(`🔐 Login activity created successfully: ${activity.id}`);
+            }
           }).catch((error) => {
             this.logger.error(`Failed to log activity: ${error.message}`, error.stack);
+            if (endpoint.includes('/mobile/auth/login') || endpoint.includes('/api/mobile/auth/login') || endpoint.includes('/org/auth/login')) {
+              this.logger.error(`🔐 Failed to log login activity for endpoint: ${endpoint}`, error);
+            }
           });
         },
         error: async (error) => {
