@@ -61,6 +61,8 @@ async function createNestApp(): Promise<NestFastifyApplication> {
       'Accept', 
       'Origin', 
       'X-Requested-With',
+      'x-org-admin-id',
+      'x-admin-id',
       'Access-Control-Allow-Origin',
       'Access-Control-Allow-Headers',
       'Access-Control-Allow-Methods'
@@ -77,7 +79,7 @@ async function createNestApp(): Promise<NestFastifyApplication> {
     if (request.method === 'OPTIONS') {
       reply.header('Access-Control-Allow-Origin', '*');
       reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
-      reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin, X-Requested-With');
+      reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin, X-Requested-With, x-org-admin-id, x-admin-id');
       reply.header('Access-Control-Max-Age', '86400');
       reply.code(204).send();
       return;
@@ -102,7 +104,7 @@ export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin, X-Requested-With');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin, X-Requested-With, x-org-admin-id, x-admin-id');
     res.setHeader('Access-Control-Max-Age', '86400');
     res.status(204).end();
     return;

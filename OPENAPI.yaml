@@ -35,6 +35,8 @@ tags:
     description: Push notification management for users, organization admins, and Blocks admin.
   - name: Organization Admin Auth
     description: Organization admin authentication and web push registration.
+  - name: Property Requests
+    description: Property requests submitted by ORG Admins, awaiting Blocks Admin approval.
 
 paths:
   # ----------------------------------------------
@@ -799,6 +801,117 @@ paths:
                 $ref: '#/components/schemas/Property'
         '404':
           description: Property not found.
+
+  # ----------------------------------------------
+  # Property Requests
+  # ----------------------------------------------
+  /property-requests:
+    post:
+      tags:
+        - Property Requests
+      summary: Create a property request (ORG Admin)
+      description: ORG Admin submits a property request for Blocks Admin approval. Include orgAdminId in body or x-org-admin-id header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PropertyRequestCreate'
+      responses:
+        '201':
+          description: Property request created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyRequest'
+        '400':
+          description: Bad request (e.g., slug already exists, invalid data).
+        '401':
+          description: Unauthorized (orgAdminId missing or invalid).
+        '403':
+          description: Forbidden (org admin doesn't belong to the organization).
+    get:
+      tags:
+        - Property Requests
+      summary: List property requests
+      description: Get all property requests. If x-org-admin-id header is provided, returns only requests for that org admin's organization. If JWT token is provided (Blocks Admin), returns all requests.
+      parameters:
+        - name: x-org-admin-id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Organization admin ID (for filtering by organization).
+      responses:
+        '200':
+          description: A list of property requests.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PropertyRequest'
+  /property-requests/{id}:
+    get:
+      tags:
+        - Property Requests
+      summary: Get property request by ID
+      description: Get a single property request by its ID. ORG Admins can only view requests from their organization.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The UUID of the property request.
+        - name: x-org-admin-id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Organization admin ID (for access control).
+      responses:
+        '200':
+          description: Property request details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyRequest'
+        '404':
+          description: Property request not found.
+    patch:
+      tags:
+        - Property Requests
+      summary: Approve or reject property request (Blocks Admin)
+      description: Blocks Admin approves or rejects a property request. Requires JWT authentication with admin role. On approval, creates the property automatically.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The UUID of the property request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PropertyRequestStatusUpdate'
+      responses:
+        '200':
+          description: Property request status updated successfully. If approved, property is created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyRequest'
+        '400':
+          description: Bad request (e.g., request already processed).
+        '403':
+          description: Forbidden (only Blocks Admin can approve/reject).
+        '404':
+          description: Property request not found.
 
   # ----------------------------------------------
   # Wallet
@@ -2492,6 +2605,184 @@ components:
             type: string
             format: uri
           example: ["https://example.com/updated-img1.jpg"]
+    PropertyRequestCreate:
+      type: object
+      properties:
+        orgAdminId:
+          type: string
+          description: Organization admin ID (can also be sent in x-org-admin-id header).
+          example: "uuid-of-org-admin"
+        organizationId:
+          type: string
+          description: UUID or displayCode (e.g., ORG-000001).
+          example: ORG-000001
+        title:
+          type: string
+          example: Marina View Residences
+        slug:
+          type: string
+          example: marina-view-residences
+        description:
+          type: string
+          example: Luxury waterfront apartments
+        type:
+          type: string
+          enum: [residential, commercial, mixed]
+          example: residential
+        propertyStatus:
+          type: string
+          enum: [planning, construction, active, onhold, soldout, completed]
+          default: planning
+          example: planning
+        totalValueUSDT:
+          type: number
+          format: double
+          example: 1000000
+        totalTokens:
+          type: number
+          format: double
+          example: 1000
+        expectedROI:
+          type: number
+          format: double
+          example: 10
+        city:
+          type: string
+          example: Karachi
+        country:
+          type: string
+          example: Pakistan
+        features:
+          type: object
+          example: { 'amenities': ['pool', 'gym'] }
+        images:
+          type: object
+          description: JSONB object containing image URLs
+          example: { 'urls': ['https://example.com/img1.jpg'] }
+        documents:
+          type: object
+          description: JSONB object containing document information
+          example: { 'brochure': null, 'floorPlan': null, 'compliance': [] }
+      required:
+        - organizationId
+        - title
+        - slug
+        - type
+        - totalValueUSDT
+        - totalTokens
+        - expectedROI
+    PropertyRequestStatusUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [approved, rejected]
+          example: approved
+        rejectionReason:
+          type: string
+          description: Required if status is 'rejected'.
+          example: "Property details do not meet our standards."
+      required:
+        - status
+    PropertyRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        organizationId:
+          type: string
+          format: uuid
+        organization:
+          $ref: '#/components/schemas/Organization'
+        requestedBy:
+          type: string
+          format: uuid
+        requester:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+            fullName:
+              type: string
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+          example: pending
+        title:
+          type: string
+          example: Marina View Residences
+        slug:
+          type: string
+          example: marina-view-residences
+        description:
+          type: string
+          example: Luxury waterfront apartments
+        type:
+          type: string
+          enum: [residential, commercial, mixed]
+        propertyStatus:
+          type: string
+          enum: [planning, construction, active, onhold, soldout, completed]
+        totalValueUSDT:
+          type: string
+          format: decimal
+          example: "1000000.000000"
+        totalTokens:
+          type: string
+          format: decimal
+          example: "1000.000000"
+        expectedROI:
+          type: string
+          format: decimal
+          example: "10.00"
+        city:
+          type: string
+          example: Karachi
+        country:
+          type: string
+          example: Pakistan
+        features:
+          type: object
+          example: { 'amenities': ['pool', 'gym'] }
+        images:
+          type: object
+          example: { 'urls': ['https://example.com/img1.jpg'] }
+        documents:
+          type: object
+          example: { 'brochure': null, 'floorPlan': null, 'compliance': [] }
+        reviewedBy:
+          type: string
+          format: uuid
+          nullable: true
+        reviewer:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+            fullName:
+              type: string
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+        rejectionReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     PropertyStatusUpdate:
       type: object
       properties:
@@ -3439,3 +3730,10 @@ components:
             $ref: '#/components/schemas/Investment'
         analytics:
           $ref: '#/components/schemas/InvestmentAnalytics'
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from /api/mobile/auth/login endpoint

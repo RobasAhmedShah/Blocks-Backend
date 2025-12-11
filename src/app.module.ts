@@ -34,6 +34,7 @@ import { MobileCertificatesModule } from './mobile-certificates/mobile-certifica
 import { MobileKycModule } from './mobile-kyc/mobile-kyc.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ActivitiesModule } from './activities/activities.module';
+import { PropertyRequestsModule } from './property-requests/property-requests.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ActivityLoggingInterceptor } from './activities/interceptors/activity-logging.interceptor';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -81,6 +82,7 @@ import { User } from './admin/entities/user.entity';
     MobileKycModule, // Mobile KYC endpoints
     NotificationsModule, // Push notifications system
     ActivitiesModule, // Activity logging system
+    PropertyRequestsModule, // Property requests system
   ],
   controllers: [AppController],
   providers: [

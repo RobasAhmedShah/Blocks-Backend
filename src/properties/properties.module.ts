@@ -13,6 +13,7 @@ import { UploadModule } from '../upload/upload.module';
   ],
   controllers: [PropertiesController],
   providers: [PropertiesService],
+  exports: [PropertiesService],
 })
 export class PropertiesModule {}
 
