@@ -41,10 +41,106 @@ export class NotificationsService {
     this.expo = new Expo();
 
     // Initialize Firebase Admin for FCM tokens
+    // Use split environment variables (best practice for serverless/Vercel)
+    // This avoids JSON parsing issues and newline escaping problems
+    const firebaseProjectId = this.configService.get<string>('FIREBASE_PROJECT_ID');
+    const firebaseClientEmail = this.configService.get<string>('FIREBASE_CLIENT_EMAIL');
+    const firebasePrivateKey = this.configService.get<string>('FIREBASE_PRIVATE_KEY');
+    
+    // Fallback: support legacy FIREBASE_SERVICE_ACCOUNT JSON blob for backward compatibility
     const firebaseServiceAccount = this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT');
+
+    // Log Firebase credential configuration status (full values for testing)
+    this.logger.log('🔍 Firebase Credentials Check:');
+    this.logger.log(`   FIREBASE_PROJECT_ID: ${firebaseProjectId ? `✅ Present (${firebaseProjectId})` : '❌ Missing'}`);
+    this.logger.log(`   FIREBASE_CLIENT_EMAIL: ${firebaseClientEmail ? `✅ Present (${firebaseClientEmail})` : '❌ Missing'}`);
+    this.logger.log(`   FIREBASE_PRIVATE_KEY: ${firebasePrivateKey ? `✅ Present (length: ${firebasePrivateKey.length}, has BEGIN: ${firebasePrivateKey.includes('BEGIN PRIVATE KEY')}, has END: ${firebasePrivateKey.includes('END PRIVATE KEY')}, escaped newlines: ${(firebasePrivateKey.match(/\\n/g) || []).length})` : '❌ Missing'}`);
+    this.logger.log(`   FIREBASE_SERVICE_ACCOUNT (legacy): ${firebaseServiceAccount ? `✅ Present (length: ${firebaseServiceAccount.length}, is JSON: ${firebaseServiceAccount.trim().startsWith('{')})` : '❌ Missing'}`);
+    
+    if (firebasePrivateKey) {
+      // Show full private key for testing
+      this.logger.log(`   FIREBASE_PRIVATE_KEY (full value): ${firebasePrivateKey}`);
+    }
+    
     if (firebaseServiceAccount) {
+      // Show full legacy JSON blob for testing
+      this.logger.log(`   FIREBASE_SERVICE_ACCOUNT (full value): ${firebaseServiceAccount}`);
+    }
+
+    if (firebaseProjectId && firebaseClientEmail && firebasePrivateKey) {
+      // Preferred method: split environment variables
+      try {
+        // Normalize private key: replace escaped newlines with actual newlines
+        // Vercel may store \n as literal \\n, so we handle both cases
+        const escapedNewlineCount = (firebasePrivateKey.match(/\\n/g) || []).length;
+        const actualNewlineCount = (firebasePrivateKey.match(/\n/g) || []).length;
+        
+        this.logger.log(`   Normalizing private key: ${escapedNewlineCount} escaped newlines (\\n), ${actualNewlineCount} actual newlines`);
+        
+        const normalizedPrivateKey = firebasePrivateKey
+          .replace(/\\n/g, '\n')  // Replace escaped newlines
+          .replace(/\r\n/g, '\n')  // Normalize Windows line endings
+          .replace(/\r/g, '\n');   // Normalize Mac line endings
+        
+        const normalizedNewlineCount = (normalizedPrivateKey.match(/\n/g) || []).length;
+        this.logger.log(`   After normalization: ${normalizedNewlineCount} newlines in private key`);
+        this.logger.log(`   Normalized Private Key (full value): ${normalizedPrivateKey}`);
+
+        // Check if Firebase is already initialized
+        try {
+          this.firebaseApp = admin.app();
+          this.logger.log('Firebase Admin already initialized, reusing existing instance');
+        } catch {
+          // Not initialized, create new instance
+          this.firebaseApp = admin.initializeApp({
+            credential: admin.credential.cert({
+              projectId: firebaseProjectId,
+              clientEmail: firebaseClientEmail,
+              privateKey: normalizedPrivateKey,
+            }),
+          });
+          this.logger.log('✅ Firebase Admin initialized for FCM notifications (using split env vars)');
+        }
+      } catch (error: any) {
+        if (error.code === 'app/duplicate-app') {
+          // Firebase already initialized, use existing instance
+          this.firebaseApp = admin.app();
+          this.logger.log('Firebase Admin already initialized, reusing existing instance');
+        } else {
+          this.logger.error('Failed to initialize Firebase Admin with split env vars:', {
+            code: error.code,
+            message: error.message,
+          });
+          this.logger.warn('FCM notifications will not work. Check FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY environment variables.');
+        }
+      }
+    } else if (firebaseServiceAccount) {
+      // Legacy method: parse JSON blob (for backward compatibility)
+      this.logger.log('   Using legacy FIREBASE_SERVICE_ACCOUNT JSON blob method');
       try {
         const serviceAccount = JSON.parse(firebaseServiceAccount);
+        
+        this.logger.log(`   Parsed JSON blob: project_id=${serviceAccount.project_id}, client_email=${serviceAccount.client_email}`);
+        
+        // Normalize private key newlines
+        if (serviceAccount.private_key) {
+          const escapedNewlineCount = (serviceAccount.private_key.match(/\\n/g) || []).length;
+          const actualNewlineCount = (serviceAccount.private_key.match(/\n/g) || []).length;
+          this.logger.log(`   Private key in JSON: ${escapedNewlineCount} escaped newlines (\\n), ${actualNewlineCount} actual newlines`);
+          
+          serviceAccount.private_key = serviceAccount.private_key
+            .replace(/\\n/g, '\n')
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n');
+          
+          const normalizedNewlineCount = (serviceAccount.private_key.match(/\n/g) || []).length;
+          this.logger.log(`   After normalization: ${normalizedNewlineCount} newlines in private key`);
+          this.logger.log(`   Normalized Private Key from JSON (full value): ${serviceAccount.private_key}`);
+        }
+        
+        // Log full service account object for testing
+        this.logger.log(`   Full Service Account Object: ${JSON.stringify(serviceAccount, null, 2)}`);
+
         // Check if Firebase is already initialized
         try {
           this.firebaseApp = admin.app();
@@ -54,7 +150,8 @@ export class NotificationsService {
           this.firebaseApp = admin.initializeApp({
             credential: admin.credential.cert(serviceAccount),
           });
-          this.logger.log('Firebase Admin initialized for FCM notifications');
+          this.logger.log('✅ Firebase Admin initialized for FCM notifications (using legacy JSON blob)');
+          this.logger.warn('⚠️  Consider migrating to split env vars (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) for better reliability');
         }
       } catch (error: any) {
         if (error.code === 'app/duplicate-app') {
@@ -62,16 +159,22 @@ export class NotificationsService {
           this.firebaseApp = admin.app();
           this.logger.log('Firebase Admin already initialized, reusing existing instance');
         } else {
-          this.logger.error('Failed to initialize Firebase Admin:', error);
+          this.logger.error('Failed to initialize Firebase Admin with JSON blob:', {
+            code: error.code,
+            message: error.message,
+          });
           this.logger.warn('FCM notifications will not work. Check FIREBASE_SERVICE_ACCOUNT environment variable.');
+          this.logger.warn('⚠️  Consider using split env vars instead: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY');
         }
       }
     } else {
-      this.logger.warn('FIREBASE_SERVICE_ACCOUNT not configured - FCM notifications will not work for standalone builds');
+      this.logger.warn('Firebase credentials not configured - FCM notifications will not work for standalone builds');
       this.logger.warn('⚠️ To enable FCM notifications for standalone APK builds:');
-      this.logger.warn('   1. Get Firebase Service Account JSON from Firebase Console');
-      this.logger.warn('   2. Set FIREBASE_SERVICE_ACCOUNT environment variable in Vercel');
-      this.logger.warn('   3. The value should be the JSON content as a single-line string');
+      this.logger.warn('   Option 1 (Recommended): Set split environment variables:');
+      this.logger.warn('     - FIREBASE_PROJECT_ID=blocks-1b5ba');
+      this.logger.warn('     - FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxx@blocks-1b5ba.iam.gserviceaccount.com');
+      this.logger.warn('     - FIREBASE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----');
+      this.logger.warn('   Option 2 (Legacy): Set FIREBASE_SERVICE_ACCOUNT with full JSON as single-line string');
     }
     
     // Log Firebase initialization status
@@ -180,11 +283,12 @@ export class NotificationsService {
           // FCM tokens: typically 140+ characters, no ExponentPushToken wrapper, alphanumeric
           // In standalone APK builds, getExpoPushTokenAsync returns raw FCM tokens
           const tokenStr = String(user.expoToken);
-          const isFCMToken = !isExpoToken && 
-                             tokenStr.length > 100 && 
-                             !tokenStr.includes('ExponentPushToken') &&
-                             !tokenStr.includes('Expo') &&
-                             /^[A-Za-z0-9_-]+$/.test(tokenStr);
+          const isFCMToken =
+            !isExpoToken &&
+            tokenStr.length > 100 &&
+            !tokenStr.includes('ExponentPushToken') &&
+            // FCM registration tokens commonly contain ':' and sometimes '.'
+            /^[A-Za-z0-9:._-]+$/.test(tokenStr);
           
           this.logger.log(`🔍 Token analysis for user ${userId}:`, {
             tokenLength: tokenStr.length,
@@ -442,11 +546,12 @@ export class NotificationsService {
     // Log token registration for debugging
     const isExpoToken = Expo.isExpoPushToken(token);
     const tokenStr = String(token); // Ensure it's a string
-    const isFCMToken = !isExpoToken && 
-                       tokenStr.length > 100 && 
-                       !tokenStr.includes('ExponentPushToken') &&
-                       !tokenStr.includes('Expo') &&
-                       /^[A-Za-z0-9_-]+$/.test(tokenStr);
+    const isFCMToken =
+      !isExpoToken &&
+      tokenStr.length > 100 &&
+      !tokenStr.includes('ExponentPushToken') &&
+      // FCM registration tokens commonly contain ':' and sometimes '.'
+      /^[A-Za-z0-9:._-]+$/.test(tokenStr);
     
     this.logger.log(`📝 Registering push token for user ${userId}:`, {
       tokenType: isExpoToken ? 'Expo' : isFCMToken ? 'FCM' : 'Unknown',
