@@ -51,6 +51,7 @@
     "expo-image-picker": "^17.0.8",
     "expo-server-sdk": "^4.0.0",
     "express": "^5.1.0",
+    "firebase-admin": "^13.6.0",
     "helmet": "^8.1.0",
     "latex.js": "^0.12.6",
     "magic-sdk": "^31.2.0",

@@ -9,12 +9,14 @@ import { User } from '../admin/entities/user.entity';
 import { OrganizationAdmin } from '../organization-admins/entities/organization-admin.entity';
 import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import * as webPush from 'web-push';
+import * as admin from 'firebase-admin';
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
   private qstash: Client;
   private expo: Expo;
+  private firebaseApp: admin.app.App | null = null;
   private apiUrl: string;
 
   constructor(
@@ -37,6 +39,36 @@ export class NotificationsService {
 
     // Initialize Expo SDK
     this.expo = new Expo();
+
+    // Initialize Firebase Admin for FCM tokens
+    const firebaseServiceAccount = this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT');
+    if (firebaseServiceAccount) {
+      try {
+        const serviceAccount = JSON.parse(firebaseServiceAccount);
+        // Check if Firebase is already initialized
+        try {
+          this.firebaseApp = admin.app();
+          this.logger.log('Firebase Admin already initialized, reusing existing instance');
+        } catch {
+          // Not initialized, create new instance
+          this.firebaseApp = admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount),
+          });
+          this.logger.log('Firebase Admin initialized for FCM notifications');
+        }
+      } catch (error: any) {
+        if (error.code === 'app/duplicate-app') {
+          // Firebase already initialized, use existing instance
+          this.firebaseApp = admin.app();
+          this.logger.log('Firebase Admin already initialized, reusing existing instance');
+        } else {
+          this.logger.error('Failed to initialize Firebase Admin:', error);
+          this.logger.warn('FCM notifications will not work. Check FIREBASE_SERVICE_ACCOUNT environment variable.');
+        }
+      }
+    } else {
+      this.logger.warn('FIREBASE_SERVICE_ACCOUNT not configured - FCM notifications will not work for standalone builds');
+    }
 
     // Initialize Web Push VAPID details
     const vapidPublicKey = this.configService.get<string>('VAPID_PUBLIC_KEY');
@@ -131,14 +163,82 @@ export class NotificationsService {
       let notificationSent = false;
       let platform: 'expo' | 'web' | null = null;
 
-      // Send Expo push notification
+      // Send push notification (Expo or FCM)
       if (user.expoToken) {
         try {
-          if (Expo.isExpoPushToken(user.expoToken)) {
-            // Ensure URL is always included in notification data
-            const notificationUrl = data?.url || '/notifications?context=portfolio';
-            
-            this.logger.log(`📤 Sending Expo push to user ${userId}`, {
+          // Check if it's a valid Expo push token OR if it looks like an FCM token
+          // FCM tokens are long strings without the ExponentPushToken[] wrapper
+          // Expo tokens are in format: ExponentPushToken[xxxxxxxxxxxxxx]
+          const isExpoToken = Expo.isExpoPushToken(user.expoToken);
+          const isFCMToken = !isExpoToken && user.expoToken.length > 50 && !user.expoToken.includes('ExponentPushToken');
+          
+          // Ensure URL is always included in notification data
+          const notificationUrl = data?.url || '/notifications?context=portfolio';
+          
+          if (isFCMToken && this.firebaseApp) {
+            // Send FCM token directly via Firebase Admin SDK
+            this.logger.log(`📤 Sending FCM push notification to user ${userId}`, {
+              token: user.expoToken.substring(0, 20) + '...',
+              title,
+              message,
+              url: notificationUrl,
+            });
+
+            try {
+              const fcmMessage: admin.messaging.Message = {
+                token: user.expoToken,
+                notification: {
+                  title,
+                  body: message,
+                },
+                data: {
+                  ...(data || {}),
+                  url: notificationUrl,
+                  // Convert all data values to strings (FCM requirement)
+                  ...Object.fromEntries(
+                    Object.entries(data || {}).map(([key, value]) => [
+                      key,
+                      typeof value === 'string' ? value : JSON.stringify(value),
+                    ])
+                  ),
+                },
+                android: {
+                  priority: 'high' as const,
+                  notification: {
+                    sound: 'default',
+                    channelId: 'default',
+                  },
+                },
+                apns: {
+                  payload: {
+                    aps: {
+                      sound: 'default',
+                    },
+                  },
+                },
+              };
+
+              const response = await admin.messaging().send(fcmMessage);
+              this.logger.log(`✅ FCM notification sent successfully to user ${userId}. Message ID: ${response}`);
+              notificationSent = true;
+              platform = 'expo'; // Keep as 'expo' for consistency in database
+            } catch (fcmError: any) {
+              this.logger.error(`Failed to send FCM notification to user ${userId}:`, fcmError);
+              
+              // Handle invalid tokens
+              if (
+                fcmError.code === 'messaging/invalid-registration-token' ||
+                fcmError.code === 'messaging/registration-token-not-registered' ||
+                fcmError.message?.includes('Invalid registration token')
+              ) {
+                user.expoToken = null;
+                await this.userRepo.save(user);
+                this.logger.log(`Removed invalid FCM token for user ${userId}`);
+              }
+            }
+          } else if (isExpoToken) {
+            // Send Expo push token via Expo service
+            this.logger.log(`📤 Sending Expo push notification to user ${userId}`, {
               token: user.expoToken.substring(0, 20) + '...',
               title,
               message,
@@ -153,7 +253,6 @@ export class NotificationsService {
                 body: message,
                 data: {
                   ...(data || {}),
-                  // Ensure URL is included for navigation
                   url: notificationUrl,
                 },
               },
@@ -174,8 +273,12 @@ export class NotificationsService {
             // Check for errors in tickets
             for (const ticket of tickets) {
               if (ticket.status === 'error') {
-                this.logger.error(`Expo push error: ${ticket.message}`);
-                if (ticket.details?.error === 'DeviceNotRegistered') {
+                this.logger.error(`Expo push error: ${ticket.message}`, ticket.details);
+                if (
+                  ticket.details?.error === 'DeviceNotRegistered' ||
+                  ticket.details?.error === 'InvalidCredentials' ||
+                  ticket.message?.includes('Invalid token')
+                ) {
                   user.expoToken = null;
                   await this.userRepo.save(user);
                   this.logger.log(`Removed invalid Expo token for user ${userId}`);
@@ -183,14 +286,71 @@ export class NotificationsService {
               } else {
                 notificationSent = true;
                 platform = 'expo';
-                this.logger.log(`Expo notification sent to user ${userId}`);
+                this.logger.log(`✅ Expo notification sent successfully to user ${userId}`);
               }
             }
           } else {
-            this.logger.warn(`Invalid Expo token format for user ${userId}`);
+            // Unknown token format - try Expo first, then FCM if available
+            this.logger.warn(`Unknown token format for user ${userId}. Token: ${user.expoToken.substring(0, 30)}...`);
+            
+            // Try Expo service first
+            try {
+              const messages: ExpoPushMessage[] = [
+                {
+                  to: user.expoToken,
+                  sound: 'default',
+                  title,
+                  body: message,
+                  data: {
+                    ...(data || {}),
+                    url: notificationUrl,
+                  },
+                },
+              ];
+              const chunks = this.expo.chunkPushNotifications(messages);
+              for (const chunk of chunks) {
+                const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
+                for (const ticket of ticketChunk) {
+                  if (ticket.status === 'ok') {
+                    notificationSent = true;
+                    platform = 'expo';
+                    this.logger.log(`✅ Push notification sent (Expo fallback) to user ${userId}`);
+                    return; // Success, exit early
+                  }
+                }
+              }
+            } catch (expoError) {
+              this.logger.warn(`Expo service failed, trying FCM:`, expoError);
+            }
+
+            // If Expo failed and FCM is available, try FCM
+            if (!notificationSent && this.firebaseApp) {
+              try {
+                const fcmMessage: admin.messaging.Message = {
+                  token: user.expoToken,
+                  notification: { title, body: message },
+                  data: {
+                    ...(data || {}),
+                    url: notificationUrl,
+                    ...Object.fromEntries(
+                      Object.entries(data || {}).map(([key, value]) => [
+                        key,
+                        typeof value === 'string' ? value : JSON.stringify(value),
+                      ])
+                    ),
+                  },
+                };
+                await admin.messaging().send(fcmMessage);
+                notificationSent = true;
+                platform = 'expo';
+                this.logger.log(`✅ Push notification sent (FCM fallback) to user ${userId}`);
+              } catch (fcmError) {
+                this.logger.error(`Both Expo and FCM failed for user ${userId}:`, fcmError);
+              }
+            }
           }
         } catch (error) {
-          this.logger.error(`Failed to send Expo push to user ${userId}:`, error);
+          this.logger.error(`Failed to send push notification to user ${userId}:`, error);
         }
       }
 
@@ -265,7 +425,7 @@ export class NotificationsService {
 
   async getUserNotifications(userId: string): Promise<Notification[]> {
     // Get all notifications for user (including blocks_admin if user is Blocks admin)
-    return this.notificationRepo.find({
+    const notifications = await this.notificationRepo.find({
       where: [
         { userId, recipientType: 'user' },
         { userId, recipientType: 'blocks_admin' }, // Include blocks_admin notifications for this user
@@ -273,6 +433,9 @@ export class NotificationsService {
       order: { createdAt: 'DESC' },
       take: 50,
     });
+    
+    this.logger.log(`📬 Found ${notifications.length} notifications for user ${userId}`);
+    return notifications;
   }
 
   async markNotificationAsRead(notificationId: string, userId: string): Promise<Notification> {
@@ -303,22 +466,30 @@ export class NotificationsService {
   private mapCategoryToUrl(category: string, propertyId?: string, customUrl?: string): string {
     switch (category) {
       case 'properties':
+        // Properties list - route to property tab in mobile app
         return '/properties';
       case 'property-detail':
         if (!propertyId) {
           throw new Error('propertyId is required for property-detail category');
         }
+        // Property detail - route to specific property screen
+        // Mobile app uses /property/{id}, web uses /properties/{id}
+        // We'll use /properties/{id} and handle both in mobile app
         return `/properties/${propertyId}`;
       case 'portfolio':
-        return '/notifications?context=portfolio';
+        // Portfolio - route to portfolio tab
+        return '/portfolio';
       case 'wallet':
-        return '/notifications?context=wallet';
+        // Wallet - route to wallet tab
+        return '/wallet';
       case 'notifications':
+        // Notifications - route to notifications page
         return '/notifications';
       case 'custom':
         if (!customUrl) {
           throw new Error('customUrl is required for custom category');
         }
+        // Custom URL - can be external (http/https) or internal
         return customUrl;
       default:
         return '/notifications';
