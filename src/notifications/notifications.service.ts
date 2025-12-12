@@ -252,22 +252,6 @@ export class NotificationsService {
                 user.expoToken = null;
                 await this.userRepo.save(user);
                 this.logger.log(`✅ Removed invalid FCM token for user ${userId}`);
-              }
-                error: fcmError.message,
-                code: fcmError.code,
-                stack: fcmError.stack,
-              });
-              
-              // Handle invalid tokens
-              if (
-                fcmError.code === 'messaging/invalid-registration-token' ||
-                fcmError.code === 'messaging/registration-token-not-registered' ||
-                fcmError.message?.includes('Invalid registration token')
-              ) {
-                this.logger.warn(`🗑️ Removing invalid FCM token for user ${userId}`);
-                user.expoToken = null;
-                await this.userRepo.save(user);
-                this.logger.log(`✅ Removed invalid FCM token for user ${userId}`);
               } else {
                 // Log other FCM errors for debugging
                 this.logger.error(`FCM error details:`, {
@@ -447,16 +431,17 @@ export class NotificationsService {
 
     // Log token registration for debugging
     const isExpoToken = Expo.isExpoPushToken(token);
+    const tokenStr = String(token); // Ensure it's a string
     const isFCMToken = !isExpoToken && 
-                       token.length > 100 && 
-                       !token.includes('ExponentPushToken') &&
-                       !token.includes('Expo') &&
-                       /^[A-Za-z0-9_-]+$/.test(token);
+                       tokenStr.length > 100 && 
+                       !tokenStr.includes('ExponentPushToken') &&
+                       !tokenStr.includes('Expo') &&
+                       /^[A-Za-z0-9_-]+$/.test(tokenStr);
     
     this.logger.log(`📝 Registering push token for user ${userId}:`, {
       tokenType: isExpoToken ? 'Expo' : isFCMToken ? 'FCM' : 'Unknown',
-      tokenLength: token.length,
-      tokenPreview: token.substring(0, 30) + '...',
+      tokenLength: tokenStr.length,
+      tokenPreview: tokenStr.substring(0, 30) + '...',
       hasFirebaseApp: !!this.firebaseApp,
     });
 
