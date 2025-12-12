@@ -170,7 +170,20 @@ export class NotificationsService {
           // FCM tokens are long strings without the ExponentPushToken[] wrapper
           // Expo tokens are in format: ExponentPushToken[xxxxxxxxxxxxxx]
           const isExpoToken = Expo.isExpoPushToken(user.expoToken);
-          const isFCMToken = !isExpoToken && user.expoToken.length > 50 && !user.expoToken.includes('ExponentPushToken');
+          // FCM tokens: typically 140+ characters, no ExponentPushToken wrapper, alphanumeric
+          const isFCMToken = !isExpoToken && 
+                             user.expoToken.length > 100 && 
+                             !user.expoToken.includes('ExponentPushToken') &&
+                             !user.expoToken.includes('Expo') &&
+                             /^[A-Za-z0-9_-]+$/.test(user.expoToken);
+          
+          this.logger.log(`🔍 Token analysis for user ${userId}:`, {
+            tokenLength: user.expoToken.length,
+            isExpoToken,
+            isFCMToken,
+            hasFirebaseApp: !!this.firebaseApp,
+            tokenPreview: user.expoToken.substring(0, 30) + '...',
+          });
           
           // Ensure URL is always included in notification data
           const notificationUrl = data?.url || '/notifications?context=portfolio';
@@ -223,7 +236,11 @@ export class NotificationsService {
               notificationSent = true;
               platform = 'expo'; // Keep as 'expo' for consistency in database
             } catch (fcmError: any) {
-              this.logger.error(`Failed to send FCM notification to user ${userId}:`, fcmError);
+              this.logger.error(`❌ Failed to send FCM notification to user ${userId}:`, {
+                error: fcmError.message,
+                code: fcmError.code,
+                errorInfo: fcmError.errorInfo,
+              });
               
               // Handle invalid tokens
               if (
@@ -231,9 +248,33 @@ export class NotificationsService {
                 fcmError.code === 'messaging/registration-token-not-registered' ||
                 fcmError.message?.includes('Invalid registration token')
               ) {
+                this.logger.warn(`🗑️ Removing invalid FCM token for user ${userId}`);
                 user.expoToken = null;
                 await this.userRepo.save(user);
-                this.logger.log(`Removed invalid FCM token for user ${userId}`);
+                this.logger.log(`✅ Removed invalid FCM token for user ${userId}`);
+              }
+                error: fcmError.message,
+                code: fcmError.code,
+                stack: fcmError.stack,
+              });
+              
+              // Handle invalid tokens
+              if (
+                fcmError.code === 'messaging/invalid-registration-token' ||
+                fcmError.code === 'messaging/registration-token-not-registered' ||
+                fcmError.message?.includes('Invalid registration token')
+              ) {
+                this.logger.warn(`🗑️ Removing invalid FCM token for user ${userId}`);
+                user.expoToken = null;
+                await this.userRepo.save(user);
+                this.logger.log(`✅ Removed invalid FCM token for user ${userId}`);
+              } else {
+                // Log other FCM errors for debugging
+                this.logger.error(`FCM error details:`, {
+                  code: fcmError.code,
+                  message: fcmError.message,
+                  errorInfo: fcmError.errorInfo,
+                });
               }
             }
           } else if (isExpoToken) {
@@ -403,6 +444,21 @@ export class NotificationsService {
     if (!user) {
       throw new Error('User not found');
     }
+
+    // Log token registration for debugging
+    const isExpoToken = Expo.isExpoPushToken(token);
+    const isFCMToken = !isExpoToken && 
+                       token.length > 100 && 
+                       !token.includes('ExponentPushToken') &&
+                       !token.includes('Expo') &&
+                       /^[A-Za-z0-9_-]+$/.test(token);
+    
+    this.logger.log(`📝 Registering push token for user ${userId}:`, {
+      tokenType: isExpoToken ? 'Expo' : isFCMToken ? 'FCM' : 'Unknown',
+      tokenLength: token.length,
+      tokenPreview: token.substring(0, 30) + '...',
+      hasFirebaseApp: !!this.firebaseApp,
+    });
 
     user.expoToken = token;
     return this.userRepo.save(user);
