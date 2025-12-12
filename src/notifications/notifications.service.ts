@@ -68,7 +68,14 @@ export class NotificationsService {
       }
     } else {
       this.logger.warn('FIREBASE_SERVICE_ACCOUNT not configured - FCM notifications will not work for standalone builds');
+      this.logger.warn('⚠️ To enable FCM notifications for standalone APK builds:');
+      this.logger.warn('   1. Get Firebase Service Account JSON from Firebase Console');
+      this.logger.warn('   2. Set FIREBASE_SERVICE_ACCOUNT environment variable in Vercel');
+      this.logger.warn('   3. The value should be the JSON content as a single-line string');
     }
+    
+    // Log Firebase initialization status
+    this.logger.log(`🔥 Firebase Admin SDK Status: ${this.firebaseApp ? '✅ Initialized' : '❌ Not Initialized'}`);
 
     // Initialize Web Push VAPID details
     const vapidPublicKey = this.configService.get<string>('VAPID_PUBLIC_KEY');
@@ -171,18 +178,21 @@ export class NotificationsService {
           // Expo tokens are in format: ExponentPushToken[xxxxxxxxxxxxxx]
           const isExpoToken = Expo.isExpoPushToken(user.expoToken);
           // FCM tokens: typically 140+ characters, no ExponentPushToken wrapper, alphanumeric
+          // In standalone APK builds, getExpoPushTokenAsync returns raw FCM tokens
+          const tokenStr = String(user.expoToken);
           const isFCMToken = !isExpoToken && 
-                             user.expoToken.length > 100 && 
-                             !user.expoToken.includes('ExponentPushToken') &&
-                             !user.expoToken.includes('Expo') &&
-                             /^[A-Za-z0-9_-]+$/.test(user.expoToken);
+                             tokenStr.length > 100 && 
+                             !tokenStr.includes('ExponentPushToken') &&
+                             !tokenStr.includes('Expo') &&
+                             /^[A-Za-z0-9_-]+$/.test(tokenStr);
           
           this.logger.log(`🔍 Token analysis for user ${userId}:`, {
-            tokenLength: user.expoToken.length,
+            tokenLength: tokenStr.length,
             isExpoToken,
             isFCMToken,
             hasFirebaseApp: !!this.firebaseApp,
-            tokenPreview: user.expoToken.substring(0, 30) + '...',
+            tokenPreview: tokenStr.substring(0, 30) + '...',
+            firebaseInitialized: !!this.firebaseApp,
           });
           
           // Ensure URL is always included in notification data
@@ -191,7 +201,7 @@ export class NotificationsService {
           if (isFCMToken && this.firebaseApp) {
             // Send FCM token directly via Firebase Admin SDK
             this.logger.log(`📤 Sending FCM push notification to user ${userId}`, {
-              token: user.expoToken.substring(0, 20) + '...',
+              token: tokenStr.substring(0, 20) + '...',
               title,
               message,
               url: notificationUrl,
@@ -199,7 +209,7 @@ export class NotificationsService {
 
             try {
               const fcmMessage: admin.messaging.Message = {
-                token: user.expoToken,
+                token: tokenStr,
                 notification: {
                   title,
                   body: message,
