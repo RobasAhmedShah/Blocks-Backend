@@ -181,3 +181,4 @@ API_URL=https://your-app.vercel.app
 - **Both methods work:** Backend automatically detects and uses the correct method
 - **No app changes needed:** App continues to use `getExpoPushTokenAsync()` - backend handles the rest
 
+

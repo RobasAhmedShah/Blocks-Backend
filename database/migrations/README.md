@@ -2,6 +2,37 @@
 
 This directory contains SQL migration files for the Blocks Backend database.
 
+## 🚨 CRITICAL: Production Missing Columns Fix
+
+**If you're seeing errors like:**
+- `column User.dob does not exist`
+- `column User.password does not exist`
+- `column User.expoToken does not exist`
+- `column property.documents does not exist`
+
+**This means your production database is missing columns that exist in TypeORM entities.**
+
+### Solution: Run the Comprehensive Fix Migration
+
+**File:** `fix-missing-columns-production.sql`
+
+This migration adds ALL missing columns that should exist based on your entity definitions:
+
+1. **Connect to your production database** (Neon/Vercel)
+2. **Open SQL Editor** in Neon dashboard
+3. **Copy and paste** the contents of `fix-missing-columns-production.sql`
+4. **Execute** the migration
+5. **Verify** columns exist (see verification queries in the migration file)
+
+**Why this happened:**
+- TypeORM `synchronize` was used in development (auto-creates columns)
+- Production has `synchronize=false` (correct, but migrations weren't run)
+- Result: Columns exist in entities but not in production database
+
+**See:** `docs/PRODUCTION_MIGRATION_GUIDE.md` for detailed explanation and best practices.
+
+---
+
 ## Quick Fix for Password Column Issue
 
 If you're experiencing issues where the `password` column is missing or going null:
@@ -36,8 +67,11 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 ## Migration Files
 
+- **`fix-missing-columns-production.sql`** - ⚠️ **CRITICAL**: Fixes all missing columns in production (run this first!)
 - `add-password-to-users.sql` - Adds password column for JWT authentication
 - `add-user-profile-fields.sql` - Adds profile fields (dob, address, profileImage)
+- `add-push-notifications.sql` - Adds expoToken and webPushSubscription columns
+- `add-property-documents-column.sql` - Adds documents JSONB column to properties
 - `fix-password-column.sql` - Quick fix for password column issues
 
 ## Running Migrations
