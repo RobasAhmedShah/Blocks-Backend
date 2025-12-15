@@ -70,13 +70,26 @@ export class MobileProfileService {
   }
 
   private transformUserInfo(user: User): any {
+    // Defensive handling: dob may be string, Date, or null
+    let dob: string | null = null;
+    if (user.dob) {
+      try {
+        const date = user.dob instanceof Date ? user.dob : new Date(user.dob as any);
+        if (!isNaN(date.getTime())) {
+          dob = date.toISOString().split('T')[0];
+        }
+      } catch {
+        dob = null;
+      }
+    }
+
     return {
       id: user.id,
       displayCode: user.displayCode,
       email: user.email,
       fullName: user.fullName,
       phone: user.phone || null,
-      dob: user.dob ? user.dob.toISOString().split('T')[0] : null, // Format as YYYY-MM-DD
+      dob,
       address: user.address || null,
       profileImage: user.profileImage || null,
       role: user.role,

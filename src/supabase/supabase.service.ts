@@ -9,6 +9,7 @@ export class SupabaseService implements OnModuleInit {
   private readonly certificatesBucket: string;
   private readonly propertyDocumentsBucket: string;
   private readonly kycDocumentsBucket: string;
+  private readonly profileImagesBucket: string;
 
   constructor(private configService: ConfigService) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
@@ -36,6 +37,10 @@ export class SupabaseService implements OnModuleInit {
       'SUPABASE_KYC_DOCUMENTS_BUCKET',
       'kyc-documents',
     );
+    this.profileImagesBucket = this.configService.get<string>(
+      'SUPABASE_PROFILE_IMAGES_BUCKET',
+      'profile-images',
+    );
   }
 
   onModuleInit() {
@@ -44,6 +49,7 @@ export class SupabaseService implements OnModuleInit {
     console.log(`Certificates bucket: ${this.certificatesBucket}`);
     console.log(`Property documents bucket: ${this.propertyDocumentsBucket}`);
     console.log(`KYC documents bucket: ${this.kycDocumentsBucket}`);
+    console.log(`Profile images bucket: ${this.profileImagesBucket}`);
   }
 
   /**
@@ -214,6 +220,55 @@ export class SupabaseService implements OnModuleInit {
 
     if (error) {
       throw new Error(`Failed to delete KYC document: ${error.message}`);
+    }
+  }
+
+  /**
+   * Upload profile image to Supabase Storage
+   */
+  async uploadProfileImage(
+    userId: string,
+    fileBuffer: Buffer,
+    contentType: string = 'image/jpeg',
+  ): Promise<{ path: string; publicUrl: string }> {
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substring(2, 9);
+    const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
+    const filePath = `${userId}/profile-${timestamp}-${randomId}.${ext}`;
+
+    // Use upsert: true to allow overwriting existing profile images
+    const { data, error } = await this.supabase.storage
+      .from(this.profileImagesBucket)
+      .upload(filePath, fileBuffer, {
+        contentType,
+        upsert: false, // Don't overwrite - create new file each time
+      });
+
+    if (error) {
+      throw new Error(`Failed to upload profile image: ${error.message}`);
+    }
+
+    // Get public URL
+    const { data: urlData } = this.supabase.storage
+      .from(this.profileImagesBucket)
+      .getPublicUrl(filePath);
+
+    return {
+      path: data.path,
+      publicUrl: urlData.publicUrl,
+    };
+  }
+
+  /**
+   * Delete profile image from Supabase Storage
+   */
+  async deleteProfileImage(filePath: string): Promise<void> {
+    const { error } = await this.supabase.storage
+      .from(this.profileImagesBucket)
+      .remove([filePath]);
+
+    if (error) {
+      throw new Error(`Failed to delete profile image: ${error.message}`);
     }
   }
 }
