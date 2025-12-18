@@ -20,7 +20,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "migrate": "node scripts/run-migrations.js"
+    "migrate": "node scripts/run-migrations.js",
+    "setup:db": "node scripts/setup-new-database.js"
   },
   "dependencies": {
     "@fastify/multipart": "^9.3.0",
@@ -64,6 +65,7 @@
     "rxjs": "^7.8.1",
     "sqlite3": "^5.1.7",
     "typeorm": "^0.3.27",
+    "vercel": "^50.1.2",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

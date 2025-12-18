@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsBoolean, IsEmail, IsEnum } from 'class-validator';
+import { IsOptional, IsString, IsBoolean, IsEmail } from 'class-validator';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -12,10 +12,6 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   phone?: string;
-
-  @IsOptional()
-  @IsEnum(['user', 'admin'])
-  role?: 'user' | 'admin';
 
   @IsOptional()
   @IsBoolean()

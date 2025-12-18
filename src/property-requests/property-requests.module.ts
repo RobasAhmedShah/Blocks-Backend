@@ -6,12 +6,12 @@ import { PropertyRequestsController } from './property-requests.controller';
 import { Organization } from '../organizations/entities/organization.entity';
 import { OrganizationAdmin } from '../organization-admins/entities/organization-admin.entity';
 import { Property } from '../properties/entities/property.entity';
-import { User } from '../admin/entities/user.entity';
+import { BlocksAdmin } from '../blocks-admin/entities/blocks-admin.entity';
 import { PropertiesModule } from '../properties/properties.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([PropertyRequest, Organization, OrganizationAdmin, Property, User]),
+    TypeOrmModule.forFeature([PropertyRequest, Organization, OrganizationAdmin, Property, BlocksAdmin]),
     PropertiesModule,
   ],
   controllers: [PropertyRequestsController],

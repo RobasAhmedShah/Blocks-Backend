@@ -3,7 +3,7 @@ import { DecimalTransformer } from '../../common/decimal.transformer';
 import Decimal from 'decimal.js';
 import { Organization } from '../../organizations/entities/organization.entity';
 import { OrganizationAdmin } from '../../organization-admins/entities/organization-admin.entity';
-import { User } from '../../admin/entities/user.entity';
+import { BlocksAdmin } from '../../blocks-admin/entities/blocks-admin.entity';
 
 @Entity('property_requests')
 export class PropertyRequest {
@@ -73,11 +73,11 @@ export class PropertyRequest {
 
   // Approval fields
   @Column({ type: 'uuid', nullable: true })
-  reviewedBy?: string | null;
+  blocksAdminId?: string | null;
 
-  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'reviewedBy' })
-  reviewer?: User | null;
+  @ManyToOne(() => BlocksAdmin, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'blocksAdminId' })
+  blocksAdmin?: BlocksAdmin | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   reviewedAt?: Date | null;

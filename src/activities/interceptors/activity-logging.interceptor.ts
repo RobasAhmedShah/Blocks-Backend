@@ -57,17 +57,10 @@ export class ActivityLoggingInterceptor implements NestInterceptor {
 
     if (user) {
       // User object is available from guard
-      if (user.role === 'admin') {
-        userType = 'admin';
-        userId = user.id;
-        userName = user.fullName || user.name;
-        userEmail = user.email;
-      } else {
-        userType = 'user';
-        userId = user.id;
-        userName = user.fullName || user.name;
-        userEmail = user.email;
-      }
+      userType = 'user';
+      userId = user.id;
+      userName = user.fullName || user.name;
+      userEmail = user.email;
     } else if (orgAdmin) {
       // Org admin object is available
       userType = 'org_admin';
@@ -130,14 +123,14 @@ export class ActivityLoggingInterceptor implements NestInterceptor {
             try {
               const userByToken = await this.userRepository.findOne({
                 where: { expoToken },
-                select: ['id', 'fullName', 'email', 'role']
+                select: ['id', 'fullName', 'email']
               });
               
               if (userByToken) {
                 finalUserId = userByToken.id;
                 finalUserName = userByToken.fullName;
                 finalUserEmail = userByToken.email;
-                finalUserType = userByToken.role === 'admin' ? 'admin' : 'user';
+                finalUserType = 'user';
               }
             } catch (error) {
               this.logger.warn(`Failed to lookup user by expoToken: ${error.message}`);
@@ -208,9 +201,7 @@ export class ActivityLoggingInterceptor implements NestInterceptor {
               if (!finalUserId && registeredUser.id) finalUserId = registeredUser.id;
               if (!finalUserName && registeredUser.fullName) finalUserName = registeredUser.fullName;
               if (!finalUserEmail && registeredUser.email) finalUserEmail = registeredUser.email;
-              if (finalUserType === 'anonymous' && registeredUser.role) {
-                finalUserType = registeredUser.role === 'admin' ? 'admin' : 'user';
-              }
+              if (finalUserType === 'anonymous') finalUserType = 'user';
             }
             
             if (enhanced.amount && !finalAmount) finalAmount = enhanced.amount;
@@ -232,9 +223,7 @@ export class ActivityLoggingInterceptor implements NestInterceptor {
               if (!finalUserId && loggedInUser.id) finalUserId = loggedInUser.id;
               if (!finalUserName && loggedInUser.fullName) finalUserName = loggedInUser.fullName;
               if (!finalUserEmail && loggedInUser.email) finalUserEmail = loggedInUser.email;
-              if (finalUserType === 'anonymous' && loggedInUser.role) {
-                finalUserType = loggedInUser.role === 'admin' ? 'admin' : 'user';
-              }
+              if (finalUserType === 'anonymous') finalUserType = 'user';
               // Set description to show user name
               finalDescription = loggedInUser.fullName || loggedInUser.name || loggedInUser.email || 'User';
             } else if (loggedInAdmin) {

@@ -49,7 +49,6 @@ export class AdminService {
         fullName: data.fullName ?? (data as any).name ?? 'Unknown User',
         email: data.email ?? 'unknown@example.com',
         phone: (data as any).phone ?? null,
-        role: (data.role as any) ?? 'user',
         isActive: (data as any).isActive ?? true,
         displayCode,
       });
@@ -95,7 +94,6 @@ export class AdminService {
         fullName: saved.fullName,
         email: saved.email,
         phone: saved.phone || undefined,
-        role: saved.role,
         walletId: wallet.id,
         kycId: kyc.id,
         portfolioId: portfolio.id,
@@ -141,7 +139,6 @@ export class AdminService {
         'user.fullName',
         'user.email',
         'user.phone',
-        'user.role',
         'user.isActive',
         'user.createdAt',
         'user.updatedAt'

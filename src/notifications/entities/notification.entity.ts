@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { User } from '../../admin/entities/user.entity';
 import { OrganizationAdmin } from '../../organization-admins/entities/organization-admin.entity';
+import { BlocksAdmin } from '../../blocks-admin/entities/blocks-admin.entity';
 
 @Entity('notifications')
 export class Notification {
@@ -30,6 +31,14 @@ export class Notification {
   @ManyToOne(() => OrganizationAdmin, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'organizationAdminId' })
   organizationAdmin: OrganizationAdmin | null;
+
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  blocksAdminId: string | null;
+
+  @ManyToOne(() => BlocksAdmin, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'blocksAdminId' })
+  blocksAdmin: BlocksAdmin | null;
 
   @Index()
   @Column({ type: 'varchar', length: 20, default: 'user' })

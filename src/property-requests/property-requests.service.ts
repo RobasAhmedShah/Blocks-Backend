@@ -9,7 +9,7 @@ import { Organization } from '../organizations/entities/organization.entity';
 import { OrganizationAdmin } from '../organization-admins/entities/organization-admin.entity';
 import { Property } from '../properties/entities/property.entity';
 import { PropertiesService } from '../properties/properties.service';
-import { User } from '../admin/entities/user.entity';
+import { BlocksAdmin } from '../blocks-admin/entities/blocks-admin.entity';
 
 @Injectable()
 export class PropertyRequestsService {
@@ -22,8 +22,8 @@ export class PropertyRequestsService {
     private readonly orgAdminRepo: Repository<OrganizationAdmin>,
     @InjectRepository(Property)
     private readonly propertyRepo: Repository<Property>,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
+    @InjectRepository(BlocksAdmin)
+    private readonly blocksAdminRepo: Repository<BlocksAdmin>,
     private readonly propertiesService: PropertiesService,
     private readonly dataSource: DataSource,
   ) {}
@@ -96,7 +96,7 @@ export class PropertyRequestsService {
       .createQueryBuilder('request')
       .leftJoinAndSelect('request.organization', 'organization')
       .leftJoinAndSelect('request.requester', 'requester')
-      .leftJoinAndSelect('request.reviewer', 'reviewer')
+      .leftJoinAndSelect('request.blocksAdmin', 'blocksAdmin')
       .orderBy('request.createdAt', 'DESC');
 
     if (orgAdminId) {
@@ -126,7 +126,7 @@ export class PropertyRequestsService {
       .createQueryBuilder('request')
       .leftJoinAndSelect('request.organization', 'organization')
       .leftJoinAndSelect('request.requester', 'requester')
-      .leftJoinAndSelect('request.reviewer', 'reviewer')
+      .leftJoinAndSelect('request.blocksAdmin', 'blocksAdmin')
       .where('request.id = :id', { id });
 
     if (orgAdminId) {
@@ -157,41 +157,16 @@ export class PropertyRequestsService {
   }
 
   async updateStatus(id: string, dto: UpdatePropertyRequestStatusDto, adminId: string) {
-    // Check if adminId is a valid UUID
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(adminId);
-    
-    let admin;
-    
-    if (isUUID) {
-      // If it's a valid UUID, try to find the admin by ID
-      admin = await this.userRepo.findOne({
-        where: { id: adminId },
-        select: ['id', 'role', 'isActive'],
-      });
-    } else {
-      // If it's not a valid UUID (e.g., 'admin-demo'), find any active admin user
-      // This handles demo/development scenarios where admin ID might not be a real UUID
-      admin = await this.userRepo.findOne({
-        where: { role: 'admin', isActive: true },
-        select: ['id', 'role', 'isActive'],
-        order: { createdAt: 'ASC' }, // Get the first admin user
-      });
-    }
+    if (!isUUID) throw new BadRequestException('Admin ID must be a valid UUID');
 
-    if (!admin) {
-      throw new NotFoundException('Admin not found');
-    }
+    const blocksAdmin = await this.blocksAdminRepo.findOne({
+      where: { id: adminId },
+      select: ['id', 'isActive'],
+    });
 
-    if (admin.role !== 'admin') {
-      throw new ForbiddenException('Only Blocks Admin can approve/reject property requests');
-    }
-
-    if (!admin.isActive) {
-      throw new ForbiddenException('Admin account is inactive');
-    }
-    
-    // Use the actual admin ID from database (in case we used a fallback)
-    const actualAdminId = admin.id;
+    if (!blocksAdmin) throw new NotFoundException('Blocks admin not found');
+    if (!blocksAdmin.isActive) throw new ForbiddenException('Blocks admin account is inactive');
 
     const request = await this.propertyRequestRepo.findOne({
       where: { id },
@@ -240,12 +215,12 @@ export class PropertyRequestsService {
 
         // Update request status
         request.status = 'approved';
-        request.reviewedBy = actualAdminId;
+        request.blocksAdminId = blocksAdmin.id;
         request.reviewedAt = new Date();
       } else {
         // Reject request
         request.status = 'rejected';
-        request.reviewedBy = actualAdminId;
+        request.blocksAdminId = blocksAdmin.id;
         request.reviewedAt = new Date();
         request.rejectionReason = dto.rejectionReason || null;
       }

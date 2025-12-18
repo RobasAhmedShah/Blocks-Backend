@@ -92,7 +92,6 @@ export class MobileProfileService {
       dob,
       address: user.address || null,
       profileImage: user.profileImage || null,
-      role: user.role,
       isActive: user.isActive,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,

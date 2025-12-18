@@ -801,7 +801,7 @@ export class AdminAnalyticsService {
   private async getUserDetails(userId: string) {
     return this.userRepo.findOne({ 
       where: { id: userId },
-      select: ['id', 'displayCode', 'fullName', 'email', 'phone', 'role', 'isActive', 'createdAt', 'updatedAt']
+      select: ['id', 'displayCode', 'fullName', 'email', 'phone', 'isActive', 'createdAt', 'updatedAt']
     });
   }
 

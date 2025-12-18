@@ -9,7 +9,6 @@ export interface UserCreatedEvent {
   fullName: string;
   email: string;
   phone?: string;
-  role: string;
   walletId: string;
   kycId: string;
   portfolioId: string;

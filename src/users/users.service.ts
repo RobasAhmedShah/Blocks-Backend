@@ -22,7 +22,6 @@ export class UsersService {
       'fullName',
       'email',
       'phone',
-      'role',
       'isActive',
       'dob',
       'address',
@@ -58,7 +57,6 @@ export class UsersService {
     if (dto.fullName !== undefined) updateData.fullName = dto.fullName;
     if (dto.email !== undefined) updateData.email = dto.email;
     if (dto.phone !== undefined) updateData.phone = dto.phone;
-    if (dto.role !== undefined) updateData.role = dto.role;
     if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
     if ((dto as any).dob !== undefined) updateData.dob = (dto as any).dob ? new Date((dto as any).dob) : null;
     if ((dto as any).address !== undefined) updateData.address = (dto as any).address;

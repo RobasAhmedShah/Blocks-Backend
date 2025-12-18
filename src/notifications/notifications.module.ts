@@ -6,10 +6,11 @@ import { NotificationsService } from './notifications.service';
 import { Notification } from './entities/notification.entity';
 import { User } from '../admin/entities/user.entity';
 import { OrganizationAdmin } from '../organization-admins/entities/organization-admin.entity';
+import { BlocksAdmin } from '../blocks-admin/entities/blocks-admin.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Notification, User, OrganizationAdmin]),
+    TypeOrmModule.forFeature([Notification, User, OrganizationAdmin, BlocksAdmin]),
     ConfigModule,
   ],
   controllers: [NotificationsController],

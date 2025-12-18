@@ -7,6 +7,7 @@ import { CreateNotificationJobDto } from './dto/create-notification-job.dto';
 import { Notification } from './entities/notification.entity';
 import { User } from '../admin/entities/user.entity';
 import { OrganizationAdmin } from '../organization-admins/entities/organization-admin.entity';
+import { BlocksAdmin } from '../blocks-admin/entities/blocks-admin.entity';
 import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import * as webPush from 'web-push';
 import * as admin from 'firebase-admin';
@@ -27,6 +28,8 @@ export class NotificationsService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(OrganizationAdmin)
     private readonly orgAdminRepo: Repository<OrganizationAdmin>,
+    @InjectRepository(BlocksAdmin)
+    private readonly blocksAdminRepo: Repository<BlocksAdmin>,
   ) {
     // Initialize QStash client
     const qstashToken = this.configService.get<string>('QSTASH_TOKEN');
@@ -580,11 +583,9 @@ export class NotificationsService {
   }
 
   async getUserNotifications(userId: string): Promise<Notification[]> {
-    // Get all notifications for user (including blocks_admin if user is Blocks admin)
     const notifications = await this.notificationRepo.find({
       where: [
         { userId, recipientType: 'user' },
-        { userId, recipientType: 'blocks_admin' }, // Include blocks_admin notifications for this user
       ],
       order: { createdAt: 'DESC' },
       take: 50,
@@ -814,28 +815,19 @@ export class NotificationsService {
     try {
       this.logger.log('Sending notification to Blocks admin');
       
-      // Find Blocks admin user (role = 'admin')
-      let blocksAdmin = await this.userRepo.findOne({
-        where: { role: 'admin', isActive: true },
-        select: ['id', 'email', 'webPushSubscription', 'role', 'isActive'],
+      // Find Blocks admin account (separate from end users)
+      const blocksAdmin = await this.blocksAdminRepo.findOne({
+        where: { isActive: true },
+        order: { createdAt: 'ASC' },
+        select: ['id', 'email', 'webPushSubscription', 'isActive'],
       });
 
-      // If still not found, try to find any active user (fallback for demo/admin accounts)
       if (!blocksAdmin) {
-        this.logger.warn('No user with role=admin found, trying to find any active user...');
-        blocksAdmin = await this.userRepo.findOne({
-          where: { isActive: true },
-          order: { createdAt: 'ASC' }, // Get the first created user (likely admin)
-          select: ['id', 'email', 'webPushSubscription', 'role', 'isActive'],
-        });
-      }
-
-      if (!blocksAdmin) {
-        this.logger.warn('Blocks admin user not found - no active users in database');
+        this.logger.warn('Blocks admin not found - no active blocks admin accounts');
         return;
       }
 
-      this.logger.log(`Found Blocks admin user: ${blocksAdmin.email} (role: ${blocksAdmin.role}, id: ${blocksAdmin.id})`);
+      this.logger.log(`Found Blocks admin: ${blocksAdmin.email} (id: ${blocksAdmin.id})`);
 
       let notificationSent = false;
       let platform: 'web' | null = null;
@@ -858,7 +850,7 @@ export class NotificationsService {
           this.logger.error(`Failed to send Web push to Blocks admin:`, error);
           if (error.statusCode === 410 || error.statusCode === 404) {
             blocksAdmin.webPushSubscription = null;
-            await this.userRepo.save(blocksAdmin);
+            await this.blocksAdminRepo.save(blocksAdmin);
             this.logger.log(`Removed invalid Web Push subscription for Blocks admin`);
           }
         }
@@ -868,7 +860,7 @@ export class NotificationsService {
 
       // Save notification record - ALWAYS save even if web push failed
       const savedNotification = await this.notificationRepo.save({
-        userId: blocksAdmin.id,
+        blocksAdminId: blocksAdmin.id,
         recipientType: 'blocks_admin',
         title,
         message,
@@ -923,30 +915,21 @@ export class NotificationsService {
    * Get notifications for Blocks admin
    */
   async getBlocksAdminNotifications(): Promise<Notification[]> {
-    // Find Blocks admin user (role = 'admin')
-    let blocksAdmin = await this.userRepo.findOne({
-      where: { role: 'admin', isActive: true },
-      select: ['id', 'email', 'role', 'isActive'],
+    const blocksAdmin = await this.blocksAdminRepo.findOne({
+      where: { isActive: true },
+      order: { createdAt: 'ASC' },
+      select: ['id', 'email', 'isActive'],
     });
 
-    // If still not found, try to find any active user (fallback)
     if (!blocksAdmin) {
-      blocksAdmin = await this.userRepo.findOne({
-        where: { isActive: true },
-        order: { createdAt: 'ASC' },
-        select: ['id', 'email', 'role', 'isActive'],
-      });
-    }
-
-    if (!blocksAdmin) {
-      this.logger.warn('Blocks admin user not found when fetching notifications');
+      this.logger.warn('Blocks admin not found when fetching notifications');
       return [];
     }
 
     this.logger.log(`Fetching notifications for Blocks admin: ${blocksAdmin.id} (${blocksAdmin.email})`);
 
     const notifications = await this.notificationRepo.find({
-      where: { userId: blocksAdmin.id, recipientType: 'blocks_admin' },
+      where: { blocksAdminId: blocksAdmin.id, recipientType: 'blocks_admin' },
       order: { createdAt: 'DESC' },
       take: 50,
     });

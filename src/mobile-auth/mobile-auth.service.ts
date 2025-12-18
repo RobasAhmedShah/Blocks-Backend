@@ -41,7 +41,7 @@ export class MobileAuthService {
     // Find user by email (including password field)
     const user = await this.userRepo.findOne({
       where: { email: dto.email },
-      select: ['id', 'email', 'password', 'fullName', 'phone', 'role', 'isActive', 'displayCode', 'createdAt', 'updatedAt'],
+      select: ['id', 'email', 'password', 'fullName', 'phone', 'isActive', 'displayCode', 'createdAt', 'updatedAt'],
     });
 
     if (!user) {
@@ -127,7 +127,6 @@ export class MobileAuthService {
         email: dto.email,
         phone: dto.phone || null,
         password: hashedPassword,
-        role: 'user',
         isActive: true,
       });
       const savedUser = await users.save(user);
@@ -201,7 +200,6 @@ export class MobileAuthService {
     const payload = {
       sub: user.id,
       email: user.email,
-      role: user.role,
     };
 
     const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
