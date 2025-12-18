@@ -35,6 +35,7 @@ import { MobileKycModule } from './mobile-kyc/mobile-kyc.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ActivitiesModule } from './activities/activities.module';
 import { PropertyRequestsModule } from './property-requests/property-requests.module';
+import { BlocksAdminModule } from './blocks-admin/blocks-admin.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ActivityLoggingInterceptor } from './activities/interceptors/activity-logging.interceptor';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -83,6 +84,7 @@ import { User } from './admin/entities/user.entity';
     NotificationsModule, // Push notifications system
     ActivitiesModule, // Activity logging system
     PropertyRequestsModule, // Property requests system
+    BlocksAdminModule, // Blocks admin authentication
   ],
   controllers: [AppController],
   providers: [

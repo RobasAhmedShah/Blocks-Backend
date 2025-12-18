@@ -131,8 +131,8 @@ if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
       console.log('Starting backend server...');
       const app = await createNestApp();
       console.log('App created, starting to listen...');
-      await app.listen(process.env.PORT || 3000, '0.0.0.0');
-      console.log(`🚀 App listening on port ${process.env.PORT || 3000}`);
+      await app.listen(process.env.PORT || 3001, '0.0.0.0');
+      console.log(`🚀 App listening on port ${process.env.PORT || 3001}`);
     } catch (error) {
       console.error('Failed to start server:', error);
       process.exit(1);
