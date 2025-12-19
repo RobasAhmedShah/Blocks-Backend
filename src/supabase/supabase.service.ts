@@ -10,6 +10,7 @@ export class SupabaseService implements OnModuleInit {
   private readonly propertyDocumentsBucket: string;
   private readonly kycDocumentsBucket: string;
   private readonly profileImagesBucket: string;
+  private readonly bankTransferReceiptsBucket: string;
 
   constructor(private configService: ConfigService) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
@@ -41,6 +42,10 @@ export class SupabaseService implements OnModuleInit {
       'SUPABASE_PROFILE_IMAGES_BUCKET',
       'profile-images',
     );
+    this.bankTransferReceiptsBucket = this.configService.get<string>(
+      'SUPABASE_BANK_TRANSFER_RECEIPTS_BUCKET',
+      'bank-transfer-receipts',
+    );
   }
 
   onModuleInit() {
@@ -50,6 +55,7 @@ export class SupabaseService implements OnModuleInit {
     console.log(`Property documents bucket: ${this.propertyDocumentsBucket}`);
     console.log(`KYC documents bucket: ${this.kycDocumentsBucket}`);
     console.log(`Profile images bucket: ${this.profileImagesBucket}`);
+    console.log(`Bank transfer receipts bucket: ${this.bankTransferReceiptsBucket}`);
   }
 
   /**
@@ -269,6 +275,73 @@ export class SupabaseService implements OnModuleInit {
 
     if (error) {
       throw new Error(`Failed to delete profile image: ${error.message}`);
+    }
+  }
+
+  /**
+   * Upload bank transfer receipt (image) to Supabase Storage
+   */
+  async uploadBankTransferReceipt(
+    userId: string,
+    requestId: string,
+    fileBuffer: Buffer,
+    contentType: string = 'image/jpeg',
+  ): Promise<{ path: string; publicUrl: string }> {
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substring(2, 9);
+    const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
+    const filePath = `${userId}/${requestId}_${timestamp}_${randomId}.${ext}`;
+
+    const { data, error } = await this.supabase.storage
+      .from(this.bankTransferReceiptsBucket)
+      .upload(filePath, fileBuffer, {
+        contentType,
+        upsert: false, // Don't overwrite - each upload is unique
+      });
+
+    if (error) {
+      throw new Error(`Failed to upload bank transfer receipt: ${error.message}`);
+    }
+
+    // Get signed URL for private bucket (or public URL if bucket is public)
+    const { data: urlData } = this.supabase.storage
+      .from(this.bankTransferReceiptsBucket)
+      .getPublicUrl(filePath);
+
+    return {
+      path: data.path,
+      publicUrl: urlData.publicUrl,
+    };
+  }
+
+  /**
+   * Generate signed URL for bank transfer receipt (for private bucket access)
+   */
+  async getBankTransferReceiptSignedUrl(
+    filePath: string,
+    expiresIn: number = 3600, // 1 hour
+  ): Promise<string> {
+    const { data, error } = await this.supabase.storage
+      .from(this.bankTransferReceiptsBucket)
+      .createSignedUrl(filePath, expiresIn);
+
+    if (error) {
+      throw new Error(`Failed to create signed URL: ${error.message}`);
+    }
+
+    return data.signedUrl;
+  }
+
+  /**
+   * Delete bank transfer receipt from Supabase Storage
+   */
+  async deleteBankTransferReceipt(filePath: string): Promise<void> {
+    const { error } = await this.supabase.storage
+      .from(this.bankTransferReceiptsBucket)
+      .remove([filePath]);
+
+    if (error) {
+      throw new Error(`Failed to delete bank transfer receipt: ${error.message}`);
     }
   }
 }

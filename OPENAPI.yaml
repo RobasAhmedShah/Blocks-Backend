@@ -37,6 +37,10 @@ tags:
     description: Organization admin authentication and web push registration.
   - name: Property Requests
     description: Property requests submitted by ORG Admins, awaiting Blocks Admin approval.
+  - name: Bank Transfers (Mobile)
+    description: Bank transfer deposit requests from mobile app users.
+  - name: Bank Transfers (Admin)
+    description: Admin endpoints for reviewing and managing bank transfer deposit requests.
 
 paths:
   # ----------------------------------------------
@@ -611,6 +615,552 @@ paths:
                   errors: 
                     type: array
                     items: { type: string }
+
+  # ----------------------------------------------
+  # Bank Transfers (Mobile)
+  # ----------------------------------------------
+  /api/mobile/bank-transfers/bank-details:
+    get:
+      tags:
+        - Bank Transfers (Mobile)
+      summary: Get bank account details for deposit
+      description: Returns the bank account information where users should send their transfer. Public endpoint.
+      responses:
+        '200':
+          description: Bank account details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      accountName:
+                        type: string
+                        example: Blocks Investment Platform
+                      accountNumber:
+                        type: string
+                        example: PK12BLOCKS0001234567890
+                      iban:
+                        type: string
+                        example: PK12BLOCKS0001234567890
+                      bankName:
+                        type: string
+                        example: Standard Chartered Bank
+                      swiftCode:
+                        type: string
+                        example: SCBLPKKA
+                      branch:
+                        type: string
+                        example: Main Branch, Karachi
+
+  /api/mobile/bank-transfers:
+    post:
+      tags:
+        - Bank Transfers (Mobile)
+      summary: Create bank transfer deposit request
+      description: Creates a new bank transfer deposit request. Accepts proofImageUrl as base64 data URL (data:image/...) or Supabase URL.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBankTransferRequest'
+      responses:
+        '201':
+          description: Bank transfer request created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/BankTransferRequest'
+                  message:
+                    type: string
+                    example: Bank transfer request created successfully
+        '400':
+          description: Invalid request data
+        '401':
+          description: Unauthorized
+
+    get:
+      tags:
+        - Bank Transfers (Mobile)
+      summary: Get user's bank transfer requests
+      description: Returns all bank transfer requests for the authenticated user.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of bank transfer requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BankTransferRequest'
+
+  /api/mobile/bank-transfers/upload-proof:
+    post:
+      tags:
+        - Bank Transfers (Mobile)
+      summary: Upload proof image (multipart)
+      description: Upload proof of transfer image file. Alternative to sending base64 in create request.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, requestId]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image file (JPEG, PNG, WebP, max 10MB)
+                requestId:
+                  type: string
+                  format: uuid
+                  description: Bank transfer request ID
+      responses:
+        '200':
+          description: Proof uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      imageUrl:
+                        type: string
+                        format: uri
+                        example: https://supabase.co/storage/v1/object/public/bank-transfer-receipts/user-id/request-id_timestamp_random.jpg
+                  message:
+                    type: string
+                    example: Proof uploaded successfully
+        '400':
+          description: Invalid file or request ID
+        '401':
+          description: Unauthorized
+
+  /api/mobile/bank-transfers/{id}:
+    get:
+      tags:
+        - Bank Transfers (Mobile)
+      summary: Get bank transfer request by ID
+      description: Get a specific bank transfer request. User can only view their own requests.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Bank transfer request ID
+      responses:
+        '200':
+          description: Bank transfer request details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/BankTransferRequest'
+        '404':
+          description: Request not found
+        '401':
+          description: Unauthorized
+
+  /api/mobile/bank-transfers/{id}/proof-url:
+    get:
+      tags:
+        - Bank Transfers (Mobile)
+      summary: Get signed URL for proof image
+      description: Get a signed URL to access the proof image (for private buckets). User can only access their own requests.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Bank transfer request ID
+        - name: expiresIn
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 3600
+          description: URL expiration time in seconds (default 1 hour)
+      responses:
+        '200':
+          description: Signed URL for proof image
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      signedUrl:
+                        type: string
+                        format: uri
+                        example: https://supabase.co/storage/v1/object/sign/bank-transfer-receipts/user-id/file.jpg?token=...
+        '404':
+          description: Request not found or proof image not available
+        '401':
+          description: Unauthorized
+
+  # ----------------------------------------------
+  # Settings (Admin)
+  # ----------------------------------------------
+  /admin/settings/bank-account:
+    get:
+      tags:
+        - Bank Transfers (Admin)
+      summary: Get bank account details (public)
+      description: Returns the bank account information for deposits. Public endpoint (no auth required).
+      responses:
+        '200':
+          description: Bank account details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      accountName:
+                        type: string
+                        example: Blocks Investment Platform
+                      accountNumber:
+                        type: string
+                        example: PK12BLOCKS0001234567890
+                      iban:
+                        type: string
+                        example: PK12BLOCKS0001234567890
+                      bankName:
+                        type: string
+                        example: Standard Chartered Bank
+                      swiftCode:
+                        type: string
+                        example: SCBLPKKA
+                      branch:
+                        type: string
+                        example: Main Branch, Karachi
+
+    patch:
+      tags:
+        - Bank Transfers (Admin)
+      summary: Update bank account details (admin)
+      description: Update bank account details that users see when making deposits. Admin only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accountName:
+                  type: string
+                  example: Blocks Investment Platform
+                accountNumber:
+                  type: string
+                  example: PK12BLOCKS0001234567890
+                iban:
+                  type: string
+                  nullable: true
+                  example: PK12BLOCKS0001234567890
+                bankName:
+                  type: string
+                  example: Standard Chartered Bank
+                swiftCode:
+                  type: string
+                  nullable: true
+                  example: SCBLPKKA
+                branch:
+                  type: string
+                  nullable: true
+                  example: Main Branch, Karachi
+      responses:
+        '200':
+          description: Bank account details updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      accountName:
+                        type: string
+                      accountNumber:
+                        type: string
+                      iban:
+                        type: string
+                      bankName:
+                        type: string
+                      swiftCode:
+                        type: string
+                      branch:
+                        type: string
+                  message:
+                    type: string
+                    example: Bank account details updated successfully
+
+  /admin/settings:
+    get:
+      tags:
+        - Bank Transfers (Admin)
+      summary: Get all settings (admin)
+      description: Get all system settings. Admin only.
+      responses:
+        '200':
+          description: List of all settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        key:
+                          type: string
+                          example: BANK_ACCOUNT_NAME
+                        value:
+                          type: string
+                          example: Blocks Investment Platform
+                        description:
+                          type: string
+                          nullable: true
+                          example: Bank account name for deposits
+                        createdAt:
+                          type: string
+                          format: date-time
+                        updatedAt:
+                          type: string
+                          format: date-time
+
+  # ----------------------------------------------
+  # Bank Transfers (Admin)
+  # ----------------------------------------------
+  /admin/bank-transfers:
+    get:
+      tags:
+        - Bank Transfers (Admin)
+      summary: Get all bank transfer requests
+      description: Get all bank transfer requests with optional filtering by status, user, pagination.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+          description: Filter by request status
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filter by user ID
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+          description: Maximum number of results
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+          description: Number of results to skip
+      responses:
+        '200':
+          description: List of bank transfer requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BankTransferRequest'
+                  count:
+                    type: integer
+                    example: 25
+
+  /admin/bank-transfers/{id}:
+    get:
+      tags:
+        - Bank Transfers (Admin)
+      summary: Get bank transfer request by ID
+      description: Get detailed information about a specific bank transfer request.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Bank transfer request ID
+      responses:
+        '200':
+          description: Bank transfer request details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/BankTransferRequest'
+        '404':
+          description: Request not found
+
+  /admin/bank-transfers/{id}/proof-url:
+    get:
+      tags:
+        - Bank Transfers (Admin)
+      summary: Get signed URL for proof image (admin)
+      description: Get a signed URL to access the proof image for admin review.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Bank transfer request ID
+        - name: expiresIn
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 3600
+          description: URL expiration time in seconds (default 1 hour)
+      responses:
+        '200':
+          description: Signed URL for proof image
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      signedUrl:
+                        type: string
+                        format: uri
+        '404':
+          description: Request not found or proof image not available
+
+  /admin/bank-transfers/{id}/review:
+    patch:
+      tags:
+        - Bank Transfers (Admin)
+      summary: Review (approve/reject) bank transfer request
+      description: Approve or reject a bank transfer request. On approval, user's wallet is credited and a transaction is created.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewBankTransferRequest'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Bank transfer request ID
+      responses:
+        '200':
+          description: Request reviewed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/BankTransferRequest'
+                  message:
+                    type: string
+                    example: Request approved successfully
+        '400':
+          description: Invalid request (e.g., request already reviewed)
+        '404':
+          description: Request not found
 
   # ----------------------------------------------
   # Users (Direct Management)
@@ -3730,6 +4280,159 @@ components:
             $ref: '#/components/schemas/Investment'
         analytics:
           $ref: '#/components/schemas/InvestmentAnalytics'
+
+    BankTransferRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        displayCode:
+          type: string
+          example: BTR-000001
+          description: Unique display code for the request
+        userId:
+          type: string
+          format: uuid
+          description: User who initiated the bank transfer
+        user:
+          $ref: '#/components/schemas/User'
+          description: User object (when relation is loaded)
+        amountUSDT:
+          type: string
+          format: decimal
+          example: "1000.000000"
+          description: Deposit amount in USDT
+        currency:
+          type: string
+          default: USDT
+          example: USDT
+        bankAccountName:
+          type: string
+          example: Blocks Investment Platform
+          description: Bank account name where user sent money
+        bankAccountNumber:
+          type: string
+          example: PK12BLOCKS0001234567890
+          description: Bank account number
+        bankIban:
+          type: string
+          nullable: true
+          example: PK12BLOCKS0001234567890
+          description: IBAN (if applicable)
+        bankName:
+          type: string
+          example: Standard Chartered Bank
+          description: Bank name
+        bankSwiftCode:
+          type: string
+          nullable: true
+          example: SCBLPKKA
+          description: SWIFT code (if applicable)
+        bankBranch:
+          type: string
+          nullable: true
+          example: Main Branch, Karachi
+          description: Bank branch (if applicable)
+        proofImageUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: https://supabase.co/storage/v1/object/public/bank-transfer-receipts/user-id/file.jpg
+          description: URL to uploaded receipt/screenshot
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+          default: pending
+          example: pending
+          description: Request status
+        reviewedBy:
+          type: string
+          format: uuid
+          nullable: true
+          description: Admin user ID who reviewed the request
+        reviewer:
+          $ref: '#/components/schemas/User'
+          nullable: true
+          description: Admin user object (when relation is loaded)
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-12-15T10:30:00Z"
+          description: Date and time when request was reviewed
+        rejectionReason:
+          type: string
+          nullable: true
+          example: "Proof image does not match bank records"
+          description: Reason for rejection (if rejected)
+        transactionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Transaction ID created when request is approved
+        transaction:
+          $ref: '#/components/schemas/Transaction'
+          nullable: true
+          description: Transaction object (when relation is loaded)
+        metadata:
+          type: object
+          nullable: true
+          description: Additional metadata in JSON format
+        description:
+          type: string
+          nullable: true
+          example: "Bank transfer deposit request for 1000 USDT"
+          description: Request description
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-12-15T09:00:00Z"
+          description: Request creation date and time
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2025-12-15T10:30:00Z"
+          description: Last update date and time
+
+    CreateBankTransferRequest:
+      type: object
+      required:
+        - amountUSDT
+        - proofImageUrl
+      properties:
+        amountUSDT:
+          type: number
+          minimum: 0.01
+          example: 1000
+          description: Deposit amount in USDT (minimum 0.01)
+        proofImageUrl:
+          type: string
+          example: "data:image/jpeg;base64,/9j/4AAQSkZJRg..."
+          description: Base64 data URL (data:image/...) or Supabase URL of the proof image
+
+    ReviewBankTransferRequest:
+      type: object
+      required:
+        - adminId
+        - status
+      properties:
+        adminId:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: Admin user ID who is reviewing the request
+        status:
+          type: string
+          enum: [approved, rejected]
+          example: approved
+          description: Review decision
+        rejectionReason:
+          type: string
+          nullable: true
+          example: "Proof image does not match bank records"
+          description: Reason for rejection (required if status is rejected)
 
   securitySchemes:
     bearerAuth:
