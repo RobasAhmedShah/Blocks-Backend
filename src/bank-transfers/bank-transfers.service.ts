@@ -121,7 +121,6 @@ export class BankTransfersService {
     const query = this.bankTransferRepo
       .createQueryBuilder('request')
       .leftJoinAndSelect('request.user', 'user')
-      .leftJoinAndSelect('request.reviewer', 'reviewer')
       .leftJoinAndSelect('request.transaction', 'transaction')
       .orderBy('request.createdAt', 'DESC');
 
@@ -161,7 +160,7 @@ export class BankTransfersService {
   async getRequestById(id: string): Promise<BankTransferRequest> {
     const request = await this.bankTransferRepo.findOne({
       where: { id },
-      relations: ['user', 'reviewer', 'transaction'],
+      relations: ['user', 'transaction'],
     });
 
     if (!request) {
@@ -236,15 +235,16 @@ export class BankTransfersService {
       const txnDisplayCode = `TXN-${txnResult[0].nextval.toString().padStart(6, '0')}`;
 
       // Create transaction
+      // Note: Description does NOT include BTR- code (hidden from users)
       const transaction = transactions.create({
         userId: request.userId,
         walletId: wallet.id,
         type: 'deposit',
         amountUSDT: amountUSDT,
         status: 'completed',
-        description: `Bank transfer deposit approved - ${request.displayCode}`,
+        description: `Bank transfer deposit approved`,
         displayCode: txnDisplayCode,
-        referenceId: request.displayCode,
+        referenceId: request.displayCode, // Keep BTR- code in referenceId for internal tracking
         metadata: {
           bankTransferRequestId: request.id,
           bankAccountName: request.bankAccountName,

@@ -157,16 +157,22 @@ export class MobileTransactionsService {
       amount = Math.abs(amount); // Ensure positive for deposits, rewards, returns, inflows
     }
 
+    // Clean description to remove BWR- and BTR- codes (hide from users)
+    let description = transaction.description || this.generateDescription(transaction);
+    // Remove BWR-XXXXXX and BTR-XXXXXX patterns from description
+    description = description.replace(/\s*-\s*(BWR|BTR)-\d+/gi, '').trim();
+    
     return {
       id: transaction.id,
       type,
       amount,
       date: transaction.createdAt.toISOString(), // Convert Date to ISO string
-      description: transaction.description || this.generateDescription(transaction),
+      description,
       status: transaction.status,
       currency: 'USDC',
       propertyId: transaction.propertyId || undefined,
       propertyTitle: transaction.property?.title || undefined,
+      metadata: transaction.metadata || undefined, // Include metadata for bank transaction IDs
     };
   }
 

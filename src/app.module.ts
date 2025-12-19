@@ -37,6 +37,7 @@ import { ActivitiesModule } from './activities/activities.module';
 import { PropertyRequestsModule } from './property-requests/property-requests.module';
 import { BlocksAdminModule } from './blocks-admin/blocks-admin.module';
 import { BankTransfersModule } from './bank-transfers/bank-transfers.module';
+import { BankWithdrawalsModule } from './bank-withdrawals/bank-withdrawals.module';
 import { SettingsModule } from './settings/settings.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ActivityLoggingInterceptor } from './activities/interceptors/activity-logging.interceptor';
@@ -88,6 +89,7 @@ import { User } from './admin/entities/user.entity';
     PropertyRequestsModule, // Property requests system
     BlocksAdminModule, // Blocks admin authentication
     BankTransfersModule, // Bank transfer deposit requests
+    BankWithdrawalsModule, // Bank withdrawal requests
     SettingsModule, // Settings management (bank account details, etc.)
   ],
   controllers: [AppController],

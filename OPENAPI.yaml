@@ -41,6 +41,10 @@ tags:
     description: Bank transfer deposit requests from mobile app users.
   - name: Bank Transfers (Admin)
     description: Admin endpoints for reviewing and managing bank transfer deposit requests.
+  - name: Bank Withdrawals (Mobile)
+    description: Bank withdrawal requests from mobile app users.
+  - name: Bank Withdrawals (Admin)
+    description: Admin endpoints for completing and managing bank withdrawal requests.
 
 paths:
   # ----------------------------------------------
@@ -1159,6 +1163,253 @@ paths:
                     example: Request approved successfully
         '400':
           description: Invalid request (e.g., request already reviewed)
+        '404':
+          description: Request not found
+
+  # ----------------------------------------------
+  # Bank Withdrawals (Mobile)
+  # ----------------------------------------------
+  /api/mobile/bank-withdrawals:
+    post:
+      tags:
+        - Bank Withdrawals (Mobile)
+      summary: Create bank withdrawal request
+      description: Create a withdrawal request. Checks user balance before allowing request. Money is NOT debited until admin confirms transfer.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBankWithdrawalRequest'
+      responses:
+        '200':
+          description: Withdrawal request created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/BankWithdrawalRequest'
+                  message:
+                    type: string
+                    example: Withdrawal request created successfully
+        '400':
+          description: Invalid request (e.g., insufficient balance)
+        '401':
+          description: Unauthorized
+    get:
+      tags:
+        - Bank Withdrawals (Mobile)
+      summary: Get user's withdrawal requests
+      description: Get all withdrawal requests for the authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of withdrawal requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BankWithdrawalRequest'
+                  count:
+                    type: integer
+                    example: 5
+        '401':
+          description: Unauthorized
+
+  /api/mobile/bank-withdrawals/{id}:
+    get:
+      tags:
+        - Bank Withdrawals (Mobile)
+      summary: Get withdrawal request by ID
+      description: Get a single withdrawal request by ID (must belong to authenticated user)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Withdrawal request ID
+      responses:
+        '200':
+          description: Withdrawal request details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/BankWithdrawalRequest'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Request not found
+
+  # ----------------------------------------------
+  # Bank Withdrawals (Admin)
+  # ----------------------------------------------
+  /admin/bank-withdrawals:
+    get:
+      tags:
+        - Bank Withdrawals (Admin)
+      summary: Get all withdrawal requests
+      description: Get all withdrawal requests (admin view). Filter by status.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, completed, rejected]
+          description: Filter by status
+      responses:
+        '200':
+          description: List of withdrawal requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BankWithdrawalRequest'
+                  count:
+                    type: integer
+                    example: 10
+
+  /admin/bank-withdrawals/{id}:
+    get:
+      tags:
+        - Bank Withdrawals (Admin)
+      summary: Get withdrawal request by ID
+      description: Get a single withdrawal request by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Withdrawal request ID
+      responses:
+        '200':
+          description: Withdrawal request details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/BankWithdrawalRequest'
+        '404':
+          description: Request not found
+
+  /admin/bank-withdrawals/{id}/complete:
+    patch:
+      tags:
+        - Bank Withdrawals (Admin)
+      summary: Complete withdrawal (mark as transferred)
+      description: Admin confirms money transfer and debits user's wallet. Requires bank transaction ID from admin's bank app.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteBankWithdrawalRequest'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Withdrawal request ID
+      responses:
+        '200':
+          description: Withdrawal completed successfully. Wallet debited.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/BankWithdrawalRequest'
+                  message:
+                    type: string
+                    example: Withdrawal completed successfully. Wallet debited.
+        '400':
+          description: Invalid request (e.g., insufficient balance, already completed)
+        '404':
+          description: Request not found
+
+  /admin/bank-withdrawals/{id}/reject:
+    patch:
+      tags:
+        - Bank Withdrawals (Admin)
+      summary: Reject withdrawal request
+      description: Reject a withdrawal request. Money is NOT debited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectBankWithdrawalRequest'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Withdrawal request ID
+      responses:
+        '200':
+          description: Withdrawal rejected successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/BankWithdrawalRequest'
+                  message:
+                    type: string
+                    example: Withdrawal rejected successfully
+        '400':
+          description: Invalid request (e.g., already completed/rejected)
         '404':
           description: Request not found
 
@@ -4433,6 +4684,201 @@ components:
           nullable: true
           example: "Proof image does not match bank records"
           description: Reason for rejection (required if status is rejected)
+
+    BankWithdrawalRequest:
+      type: object
+      description: Bank withdrawal request entity
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        displayCode:
+          type: string
+          example: BWR-000001
+          description: Unique display code (BWR-XXXXXX)
+        userId:
+          type: string
+          format: uuid
+          description: User who requested withdrawal
+        user:
+          $ref: '#/components/schemas/User'
+          description: User object (when relation is loaded)
+        amountUSDT:
+          type: string
+          format: decimal
+          example: "500.000000"
+          description: Withdrawal amount in USDT
+        currency:
+          type: string
+          default: USDT
+          example: USDT
+        userBankAccountName:
+          type: string
+          example: John Doe
+          description: Name on user's bank account (where money should be sent)
+        userBankAccountNumber:
+          type: string
+          example: PK12USER0001234567890
+          description: User's bank account number
+        userBankIban:
+          type: string
+          nullable: true
+          example: PK12USER0001234567890
+          description: User's IBAN (if applicable)
+        userBankName:
+          type: string
+          example: Standard Chartered Bank
+          description: User's bank name
+        userBankSwiftCode:
+          type: string
+          nullable: true
+          example: SCBLPKKA
+          description: User's bank SWIFT code (if applicable)
+        userBankBranch:
+          type: string
+          nullable: true
+          example: Main Branch, Karachi
+          description: User's bank branch (if applicable)
+        status:
+          type: string
+          enum: [pending, completed, rejected]
+          default: pending
+          example: pending
+          description: Request status
+        reviewedBy:
+          type: string
+          format: uuid
+          nullable: true
+          description: Admin ID who reviewed the request
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-12-15T10:30:00Z"
+          description: Date and time when request was reviewed
+        rejectionReason:
+          type: string
+          nullable: true
+          example: "Invalid bank account details"
+          description: Reason for rejection (if rejected)
+        bankTransactionId:
+          type: string
+          nullable: true
+          example: "TXN123456789"
+          description: Transaction ID from admin's bank app (after transfer)
+        bankTransactionProofUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: Optional proof screenshot URL from admin
+        transactionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Transaction ID created when withdrawal is completed (debit transaction)
+        transaction:
+          $ref: '#/components/schemas/Transaction'
+          nullable: true
+          description: Transaction object (when relation is loaded)
+        metadata:
+          type: object
+          nullable: true
+          description: Additional metadata in JSON format
+        description:
+          type: string
+          nullable: true
+          example: "Bank withdrawal request for 500 USDT to John Doe"
+          description: Request description
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-12-15T09:00:00Z"
+          description: Request creation date and time
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2025-12-15T10:30:00Z"
+          description: Last update date and time
+
+    CreateBankWithdrawalRequest:
+      type: object
+      required:
+        - amountUSDT
+        - userBankAccountName
+        - userBankAccountNumber
+        - userBankName
+      properties:
+        amountUSDT:
+          type: number
+          minimum: 0.01
+          example: 500
+          description: Withdrawal amount in USDT (minimum 0.01)
+        userBankAccountName:
+          type: string
+          example: John Doe
+          description: Name on user's bank account
+        userBankAccountNumber:
+          type: string
+          example: PK12USER0001234567890
+          description: User's bank account number
+        userBankIban:
+          type: string
+          nullable: true
+          example: PK12USER0001234567890
+          description: User's IBAN (optional)
+        userBankName:
+          type: string
+          example: Standard Chartered Bank
+          description: User's bank name
+        userBankSwiftCode:
+          type: string
+          nullable: true
+          example: SCBLPKKA
+          description: User's bank SWIFT code (optional)
+        userBankBranch:
+          type: string
+          nullable: true
+          example: Main Branch, Karachi
+          description: User's bank branch (optional)
+
+    CompleteBankWithdrawalRequest:
+      type: object
+      required:
+        - adminId
+        - bankTransactionId
+      properties:
+        adminId:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: Admin user ID who is completing the withdrawal
+        bankTransactionId:
+          type: string
+          example: "TXN123456789"
+          description: Transaction ID from admin's bank app (after transferring money)
+        bankTransactionProofUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://supabase.co/storage/v1/object/public/proofs/admin-transfer.jpg"
+          description: Optional screenshot URL of admin's bank transfer
+
+    RejectBankWithdrawalRequest:
+      type: object
+      required:
+        - adminId
+        - rejectionReason
+      properties:
+        adminId:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: Admin user ID who is rejecting the withdrawal
+        rejectionReason:
+          type: string
+          example: "Invalid bank account details provided"
+          description: Reason for rejection
 
   securitySchemes:
     bearerAuth:

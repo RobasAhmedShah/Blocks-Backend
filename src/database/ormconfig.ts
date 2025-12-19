@@ -11,7 +11,7 @@ const config: TypeOrmModuleOptions = {
   // Enable synchronize in development/local to sync schema changes
   // WARNING: This will auto-create/update tables based on entities
   // Set NODE_ENV=production to disable synchronize in production
-  synchronize: process.env.NODE_ENV !== 'production' || process.env.ENABLE_SYNC === 'true',
+  synchronize: process.env.NODE_ENV !== 'production' || process.env.ENABLE_SYNC === 'false',
   // Log SQL queries in development for debugging
   logging: process.env.NODE_ENV !== 'production' ? ['error', 'warn', 'schema'] : ['error'],
   extra: {

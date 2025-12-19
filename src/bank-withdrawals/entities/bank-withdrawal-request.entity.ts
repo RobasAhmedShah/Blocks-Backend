@@ -13,10 +13,8 @@ import Decimal from 'decimal.js';
 import { User } from '../../admin/entities/user.entity';
 import { Transaction } from '../../transactions/entities/transaction.entity';
 
-// Note: User import is still needed for the user relation (userId)
-
-@Entity('bank_transfer_requests')
-export class BankTransferRequest {
+@Entity('bank_withdrawal_requests')
+export class BankWithdrawalRequest {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -38,42 +36,37 @@ export class BankTransferRequest {
   @Column({ type: 'varchar', length: 10, default: 'USDT', name: 'currency' })
   currency: string;
 
-  // Bank Account Details (where user sent money to)
-  @Column({ type: 'varchar', length: 255, name: 'bank_account_name' })
-  bankAccountName: string;
+  // User's Bank Account Details (where they want to receive money)
+  @Column({ type: 'varchar', length: 255, name: 'user_bank_account_name' })
+  userBankAccountName: string;
 
-  @Column({ type: 'varchar', length: 100, name: 'bank_account_number' })
-  bankAccountNumber: string;
+  @Column({ type: 'varchar', length: 100, name: 'user_bank_account_number' })
+  userBankAccountNumber: string;
 
-  @Column({ type: 'varchar', length: 100, nullable: true, name: 'bank_iban' })
-  bankIban?: string;
+  @Column({ type: 'varchar', length: 100, nullable: true, name: 'user_bank_iban' })
+  userBankIban?: string;
 
-  @Column({ type: 'varchar', length: 255, name: 'bank_name' })
-  bankName: string;
+  @Column({ type: 'varchar', length: 255, name: 'user_bank_name' })
+  userBankName: string;
 
-  @Column({ type: 'varchar', length: 20, nullable: true, name: 'bank_swift_code' })
-  bankSwiftCode?: string;
+  @Column({ type: 'varchar', length: 20, nullable: true, name: 'user_bank_swift_code' })
+  userBankSwiftCode?: string;
 
-  @Column({ type: 'varchar', length: 255, nullable: true, name: 'bank_branch' })
-  bankBranch?: string;
-
-  // Proof Upload
-  @Column({ type: 'text', nullable: true, name: 'proof_image_url' })
-  proofImageUrl?: string;
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'user_bank_branch' })
+  userBankBranch?: string;
 
   // Status & Admin Review
   @Index()
   @Column({ type: 'varchar', length: 32, default: 'pending', name: 'status' })
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'completed' | 'rejected';
 
   @Index()
   @Column({ type: 'uuid', nullable: true, name: 'reviewed_by' })
   reviewedBy?: string;
 
   // Note: No foreign key constraint on reviewed_by
-  // It can contain either User IDs (from users table) or Blocks Admin IDs (from blocks_admins table)
+  // It can contain Blocks Admin IDs (from blocks_admins table)
   // The reviewer relation is removed to prevent TypeORM from creating FK constraint
-  // If you need reviewer info, query it separately based on reviewedBy value
 
   @Column({ type: 'timestamptz', nullable: true, name: 'reviewed_at' })
   reviewedAt?: Date;
@@ -81,7 +74,14 @@ export class BankTransferRequest {
   @Column({ type: 'text', nullable: true, name: 'rejection_reason' })
   rejectionReason?: string;
 
-  // Transaction Link
+  // Bank Transaction Proof (provided by admin after manual transfer)
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'bank_transaction_id' })
+  bankTransactionId?: string;
+
+  @Column({ type: 'text', nullable: true, name: 'bank_transaction_proof_url' })
+  bankTransactionProofUrl?: string;
+
+  // Transaction Link (debit transaction)
   @Index()
   @Column({ type: 'uuid', nullable: true, name: 'transaction_id' })
   transactionId?: string;
