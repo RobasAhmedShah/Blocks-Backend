@@ -20,3 +20,5 @@ import { SettingsModule } from '../settings/settings.module';
   exports: [BankTransfersService],
 })
 export class BankTransfersModule {}
+
+

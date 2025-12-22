@@ -5,3 +5,5 @@ export class RejectBankWithdrawalDto {
   @IsString()
   rejectionReason: string;
 }
+
+

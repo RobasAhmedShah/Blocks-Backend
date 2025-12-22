@@ -11,3 +11,5 @@ import { Setting } from './entities/setting.entity';
   exports: [SettingsService],
 })
 export class SettingsModule {}
+
+

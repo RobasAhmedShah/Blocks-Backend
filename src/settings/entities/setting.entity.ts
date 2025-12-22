@@ -28,3 +28,5 @@ export class Setting {
   @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt: Date;
 }
+
+

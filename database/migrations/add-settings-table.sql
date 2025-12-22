@@ -38,3 +38,5 @@ VALUES
   ('BANK_SWIFT_CODE', 'SCBLPKKA', 'Bank SWIFT code for deposits'),
   ('BANK_BRANCH', 'Main Branch, Karachi', 'Bank branch for deposits')
 ON CONFLICT (key) DO NOTHING;
+
+

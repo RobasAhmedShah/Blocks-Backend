@@ -21,3 +21,5 @@ import { Transaction } from '../transactions/entities/transaction.entity';
   exports: [BankWithdrawalsService],
 })
 export class BankWithdrawalsModule {}
+
+

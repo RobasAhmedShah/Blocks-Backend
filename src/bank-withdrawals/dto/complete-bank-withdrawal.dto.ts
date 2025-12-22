@@ -9,3 +9,5 @@ export class CompleteBankWithdrawalDto {
   @IsString()
   bankTransactionProofUrl?: string; // Optional: Admin can upload screenshot
 }
+
+

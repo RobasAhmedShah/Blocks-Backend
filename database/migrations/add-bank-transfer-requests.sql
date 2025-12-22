@@ -150,3 +150,5 @@ Check indexes
 SELECT indexname, indexdef 
 FROM pg_indexes 
 WHERE tablename = 'bank_transfer_requests';
+
+

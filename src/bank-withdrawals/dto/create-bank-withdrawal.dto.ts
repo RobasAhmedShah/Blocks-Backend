@@ -31,3 +31,5 @@ export class CreateBankWithdrawalDto {
   @IsString()
   userBankBranch?: string;
 }
+
+

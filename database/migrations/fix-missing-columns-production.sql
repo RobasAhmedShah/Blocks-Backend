@@ -80,3 +80,5 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 -- WHERE table_name = 'properties' 
 -- AND column_name = 'documents';
 
+
+

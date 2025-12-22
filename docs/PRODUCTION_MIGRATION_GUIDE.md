@@ -211,3 +211,5 @@ ALTER TABLE users DROP COLUMN IF EXISTS "dob";
 
 **Prevention:** Always create and run migrations for schema changes, never rely on synchronize in production.
 
+
+

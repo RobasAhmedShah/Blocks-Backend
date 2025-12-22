@@ -9,3 +9,5 @@ export class ReviewBankTransferDto {
   @IsString()
   rejectionReason?: string;
 }
+
+

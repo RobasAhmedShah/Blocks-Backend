@@ -69,3 +69,5 @@ COMMENT ON COLUMN bank_withdrawal_requests.user_bank_account_number IS 'User ban
 COMMENT ON COLUMN bank_withdrawal_requests.user_bank_iban IS 'User bank IBAN (optional)';
 COMMENT ON COLUMN bank_withdrawal_requests.bank_transaction_id IS 'Transaction ID provided by admin from bank app';
 COMMENT ON COLUMN bank_withdrawal_requests.status IS 'pending: awaiting admin transfer, completed: money sent & wallet debited, rejected: request denied';
+
+

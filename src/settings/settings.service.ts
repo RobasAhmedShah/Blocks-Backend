@@ -137,3 +137,5 @@ export class SettingsService {
     return this.getBankAccountDetails();
   }
 }
+
+

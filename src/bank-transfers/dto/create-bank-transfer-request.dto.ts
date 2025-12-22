@@ -10,3 +10,5 @@ export class CreateBankTransferRequestDto {
   @IsString()
   proofImageUrl: string; // Base64 data URL or Supabase URL from mobile upload
 }
+
+
