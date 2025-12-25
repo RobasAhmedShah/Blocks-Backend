@@ -39,6 +39,7 @@ import { BlocksAdminModule } from './blocks-admin/blocks-admin.module';
 import { BankTransfersModule } from './bank-transfers/bank-transfers.module';
 import { BankWithdrawalsModule } from './bank-withdrawals/bank-withdrawals.module';
 import { SettingsModule } from './settings/settings.module';
+import { OneLinkPaymentsModule } from './onelink-payments/onelink-payments.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ActivityLoggingInterceptor } from './activities/interceptors/activity-logging.interceptor';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -91,6 +92,7 @@ import { User } from './admin/entities/user.entity';
     BankTransfersModule, // Bank transfer deposit requests
     BankWithdrawalsModule, // Bank withdrawal requests
     SettingsModule, // Settings management (bank account details, etc.)
+    OneLinkPaymentsModule, // 1LINK 1QR payment integration
   ],
   controllers: [AppController],
   providers: [
