@@ -17,6 +17,7 @@ import { Investment } from '../investments/entities/investment.entity';
 import { Reward } from '../rewards/entities/reward.entity';
 import { PaymentMethod } from '../payment-methods/entities/payment-method.entity';
 import { OrganizationAdmin } from '../organization-admins/entities/organization-admin.entity';
+import { MarketplaceTrade } from '../marketplace/entities/marketplace-trade.entity';
 import { CertificatesModule } from '../certificates/certificates.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 
@@ -33,6 +34,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       Reward,
       PaymentMethod,
       OrganizationAdmin,
+      MarketplaceTrade,
     ]),
     CertificatesModule,
     NotificationsModule,

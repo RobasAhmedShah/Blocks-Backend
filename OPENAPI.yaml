@@ -45,6 +45,8 @@ tags:
     description: Bank withdrawal requests from mobile app users.
   - name: Bank Withdrawals (Admin)
     description: Admin endpoints for completing and managing bank withdrawal requests.
+  - name: Marketplace
+    description: Peer-to-peer token marketplace for buying and selling property tokens.
 
 paths:
   # ----------------------------------------------
@@ -1412,6 +1414,219 @@ paths:
           description: Invalid request (e.g., already completed/rejected)
         '404':
           description: Request not found
+
+  # ----------------------------------------------
+  # Marketplace
+  # ----------------------------------------------
+  /api/marketplace/listings:
+    get:
+      tags:
+        - Marketplace
+      summary: Get all active marketplace listings
+      description: Get all active listings with optional filters and sorting. Public endpoint (no auth required).
+      parameters:
+        - name: propertyId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by property ID
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [price_asc, price_desc, created_at_desc, created_at_asc, roi_desc]
+            default: created_at_desc
+          description: Sort order
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+          description: Number of results to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Number of results to skip
+      responses:
+        '200':
+          description: List of marketplace listings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetListingsResponse'
+    post:
+      tags:
+        - Marketplace
+      summary: Create a new marketplace listing
+      description: Create a listing to sell tokens. Requires authentication.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateListingRequest'
+      responses:
+        '201':
+          description: Listing created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketplaceListing'
+        '400':
+          description: Invalid request (insufficient tokens, invalid limits, etc.)
+        '401':
+          description: Unauthorized
+
+  /api/marketplace/listings/{id}:
+    get:
+      tags:
+        - Marketplace
+      summary: Get a single listing by ID
+      description: Get detailed information about a specific listing. Public endpoint.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Listing details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketplaceListing'
+        '404':
+          description: Listing not found
+    delete:
+      tags:
+        - Marketplace
+      summary: Cancel a listing
+      description: Cancel an active listing and unlock tokens. Only the seller can cancel their own listing.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Listing cancelled successfully
+        '403':
+          description: Forbidden (not the seller)
+        '404':
+          description: Listing not found
+
+  /api/marketplace/listings/{id}/buy:
+    post:
+      tags:
+        - Marketplace
+      summary: Buy tokens from a listing
+      description: Purchase tokens from a marketplace listing. Requires authentication.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BuyTokensRequest'
+      responses:
+        '200':
+          description: Purchase successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketplaceTrade'
+        '400':
+          description: Invalid request (insufficient balance, invalid amount, etc.)
+        '403':
+          description: Forbidden (cannot buy own listing)
+        '404':
+          description: Listing not found
+        '401':
+          description: Unauthorized
+
+  /api/marketplace/my-listings:
+    get:
+      tags:
+        - Marketplace
+      summary: Get current user's listings
+      description: Get all listings created by the authenticated user.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of user's listings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MarketplaceListing'
+        '401':
+          description: Unauthorized
+
+  /api/marketplace/my-trades:
+    get:
+      tags:
+        - Marketplace
+      summary: Get current user's trade history
+      description: Get all trades where the user was either buyer or seller.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of user's trades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MarketplaceTrade'
+        '401':
+          description: Unauthorized
+
+  /api/marketplace/available-tokens/{propertyId}:
+    get:
+      tags:
+        - Marketplace
+      summary: Get available tokens for a property
+      description: Get the number of tokens available for listing (excluding locked tokens).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: propertyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Available tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailableTokensResponse'
+        '401':
+          description: Unauthorized
 
   # ----------------------------------------------
   # Users (Direct Management)
@@ -4879,6 +5094,182 @@ components:
           type: string
           example: "Invalid bank account details provided"
           description: Reason for rejection
+
+    MarketplaceListing:
+      type: object
+      description: Marketplace listing entity
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        displayCode:
+          type: string
+          example: MKT-000001
+          description: Unique display code (MKT-XXXXXX)
+        sellerId:
+          type: string
+          format: uuid
+          description: User ID of the seller
+        seller:
+          $ref: '#/components/schemas/User'
+          nullable: true
+          description: Seller user object (when relation is loaded)
+        propertyId:
+          type: string
+          format: uuid
+          description: Property ID
+        property:
+          $ref: '#/components/schemas/Property'
+          nullable: true
+          description: Property object (when relation is loaded)
+        pricePerToken:
+          type: number
+          example: 50.00
+          description: Price per token in USDT
+        totalTokens:
+          type: number
+          example: 100.00
+          description: Total tokens listed
+        remainingTokens:
+          type: number
+          example: 75.50
+          description: Remaining tokens available for purchase
+        minOrderUSDT:
+          type: number
+          example: 100.00
+          description: Minimum order amount in USDT
+        maxOrderUSDT:
+          type: number
+          example: 5000.00
+          description: Maximum order amount in USDT
+        status:
+          type: string
+          enum: [active, sold, cancelled]
+          example: active
+          description: Listing status
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-12-23T10:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2025-12-23T10:00:00Z"
+
+    MarketplaceTrade:
+      type: object
+      description: Marketplace trade entity
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayCode:
+          type: string
+          example: TRD-000001
+          description: Unique display code (TRD-XXXXXX)
+        listingId:
+          type: string
+          format: uuid
+          nullable: true
+        buyerId:
+          type: string
+          format: uuid
+        sellerId:
+          type: string
+          format: uuid
+        propertyId:
+          type: string
+          format: uuid
+        tokensBought:
+          type: number
+          example: 10.50
+        totalUSDT:
+          type: number
+          example: 525.00
+        pricePerToken:
+          type: number
+          example: 50.00
+        buyerTransactionId:
+          type: string
+          format: uuid
+          nullable: true
+        sellerTransactionId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateListingRequest:
+      type: object
+      required:
+        - propertyId
+        - pricePerToken
+        - totalTokens
+        - minOrderUSDT
+        - maxOrderUSDT
+      properties:
+        propertyId:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        pricePerToken:
+          type: number
+          minimum: 0.01
+          example: 50.00
+        totalTokens:
+          type: number
+          minimum: 0.01
+          example: 100.00
+        minOrderUSDT:
+          type: number
+          minimum: 0.01
+          example: 100.00
+        maxOrderUSDT:
+          type: number
+          minimum: 0.01
+          example: 5000.00
+
+    BuyTokensRequest:
+      type: object
+      required:
+        - listingId
+        - tokensToBuy
+      properties:
+        listingId:
+          type: string
+          format: uuid
+        tokensToBuy:
+          type: number
+          minimum: 0.01
+          example: 10.50
+
+    GetListingsResponse:
+      type: object
+      properties:
+        listings:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketplaceListing'
+        total:
+          type: integer
+          example: 25
+        limit:
+          type: integer
+          example: 20
+        offset:
+          type: integer
+          example: 0
+
+    AvailableTokensResponse:
+      type: object
+      properties:
+        availableTokens:
+          type: string
+          example: "100.50"
+          description: Available tokens as string (for precision)
 
   securitySchemes:
     bearerAuth:

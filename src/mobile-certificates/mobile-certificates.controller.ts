@@ -276,4 +276,42 @@ export class MobileCertificatesController {
       };
     }
   }
+
+  /**
+   * Get marketplace trade certificate (buyer's ownership certificate)
+   * GET /api/mobile/certificates/marketplace-trades/:tradeId
+   */
+  @Get('marketplace-trades/:tradeId')
+  async getMarketplaceTradeCertificate(@Param('tradeId') tradeId: string) {
+    try {
+      const signedUrl = await this.certificatesService.getMarketplaceTradeCertificate(tradeId);
+      return {
+        success: true,
+        certificateUrl: signedUrl,
+      };
+    } catch (error) {
+      console.error('Marketplace trade certificate API Error:', error);
+      const errorMessage = error?.message || 'Failed to get marketplace trade certificate';
+      throw new NotFoundException(errorMessage);
+    }
+  }
+
+  /**
+   * Get transaction certificate for seller (when they sold tokens)
+   * GET /api/mobile/certificates/transactions/seller/:tradeId
+   */
+  @Get('transactions/seller/:tradeId')
+  async getSellerTransactionCertificate(@Param('tradeId') tradeId: string) {
+    try {
+      const signedUrl = await this.certificatesService.getSellerTransactionCertificate(tradeId);
+      return {
+        success: true,
+        certificateUrl: signedUrl,
+      };
+    } catch (error) {
+      console.error('Seller transaction certificate API Error:', error);
+      const errorMessage = error?.message || 'Failed to get seller transaction certificate';
+      throw new NotFoundException(errorMessage);
+    }
+  }
 }

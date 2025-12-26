@@ -57,7 +57,7 @@ export class Transaction {
   paymentMethod?: PaymentMethod;
 
   @Column({ type: 'varchar', length: 32 })
-  type: 'deposit' | 'withdrawal' | 'investment' | 'return' | 'fee' | 'reward' | 'inflow';
+  type: 'deposit' | 'withdrawal' | 'investment' | 'return' | 'fee' | 'reward' | 'inflow' | 'marketplace_buy' | 'marketplace_sell';
 
   @Column('numeric', { precision: 18, scale: 6, transformer: DecimalTransformer })
   amountUSDT: Decimal;

@@ -3,9 +3,12 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { InvestmentCompletedEvent } from '../events/investment.events';
+import type { MarketplaceTradeCompletedEvent } from '../events/marketplace.events';
 import { CertificatesService } from '../certificates/certificates.service';
 import { Transaction } from '../transactions/entities/transaction.entity';
 import { Investment } from '../investments/entities/investment.entity';
+import { MarketplaceTrade } from '../marketplace/entities/marketplace-trade.entity';
+import { Property } from '../properties/entities/property.entity';
 
 @Injectable()
 export class CertificateListener {
@@ -17,6 +20,10 @@ export class CertificateListener {
     private readonly transactionRepo: Repository<Transaction>,
     @InjectRepository(Investment)
     private readonly investmentRepo: Repository<Investment>,
+    @InjectRepository(MarketplaceTrade)
+    private readonly marketplaceTradeRepo: Repository<MarketplaceTrade>,
+    @InjectRepository(Property)
+    private readonly propertyRepo: Repository<Property>,
   ) {}
 
   /**
@@ -96,15 +103,25 @@ export class CertificateListener {
         `[CertificateListener] ✅ Found transaction: ${transaction.displayCode} (${transaction.id})`,
       );
 
-      // Generate certificate asynchronously (don't block)
+      // Generate ownership certificate with CURRENT token count (not per transaction)
       // Use await to ensure errors are caught properly
       try {
-        const result = await this.certificatesService.generateTransactionCertificate(
-          transaction.id,
+        // Get property organization name for certificate
+        const property = await this.propertyRepo.findOne({
+          where: { id: event.propertyId },
+          relations: ['organization'],
+        });
+
+        const result = await this.certificatesService.generateOwnershipCertificate(
+          event.userId,
+          event.propertyId,
           event.investmentId, // Pass the specific investment ID to save certificate to
+          'direct', // Direct purchase from BLOCKS
+          undefined, // No seller info for direct purchases
+          property?.organization?.name,
         );
         this.logger.log(
-          `[CertificateListener] ✅ Certificate generated successfully for transaction ${transaction.displayCode}: ${result.certificatePath}`,
+          `[CertificateListener] ✅ Ownership certificate generated successfully for investment ${event.investmentDisplayCode}: ${result.certificatePath}`,
         );
         
         // Verify the certificatePath was saved to the investment
@@ -125,7 +142,7 @@ export class CertificateListener {
         }
       } catch (error) {
         this.logger.error(
-          `[CertificateListener] ❌ Failed to generate certificate for transaction ${transaction.id}:`,
+          `[CertificateListener] ❌ Failed to generate ownership certificate for investment ${event.investmentId}:`,
           error.stack || error.message || error,
         );
         // Log full error details
@@ -134,6 +151,98 @@ export class CertificateListener {
       }
     } catch (error) {
       this.logger.error('[CertificateListener] ❌ Failed to handle certificate generation:', error);
+      console.error('[CertificateListener] Full error:', error);
+      // Don't throw - certificate generation failure shouldn't break the system
+    }
+  }
+
+  /**
+   * Auto-generate certificates when marketplace trade is completed
+   * 1. Generate ownership certificate for buyer (with current token count)
+   * 2. Generate transaction certificate for seller
+   * 3. Regenerate ownership certificate for seller (with updated token count after sale)
+   */
+  @OnEvent('marketplace.trade.completed', { async: true })
+  async handleMarketplaceTradeCompleted(event: MarketplaceTradeCompletedEvent) {
+    try {
+      this.logger.log(
+        `[CertificateListener] 📨 Marketplace trade completed event received: ${event.tradeDisplayCode}, buyer: ${event.buyerId}, seller: ${event.sellerId}`,
+      );
+
+      // Add delay to ensure transaction is committed and trade is visible
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Load trade to get seller and property info
+      const trade = await this.marketplaceTradeRepo.findOne({
+        where: { id: event.tradeId },
+        relations: ['buyer', 'seller', 'property', 'property.organization'],
+      });
+
+      if (!trade) {
+        this.logger.error(`[CertificateListener] ❌ Trade ${event.tradeId} not found`);
+        return;
+      }
+
+      // 1. Generate ownership certificate for BUYER (with current token count, source: marketplace)
+      try {
+        const buyerOwnershipResult = await this.certificatesService.generateOwnershipCertificate(
+          event.buyerId,
+          event.propertyId,
+          event.buyerInvestmentId,
+          'marketplace',
+          {
+            name: trade.seller?.fullName || trade.seller?.email || 'Unknown Seller',
+            email: trade.seller?.email || 'N/A',
+          },
+          trade.property?.organization?.name,
+        );
+        this.logger.log(
+          `[CertificateListener] ✅ Buyer ownership certificate generated successfully for trade ${event.tradeDisplayCode}: ${buyerOwnershipResult.certificatePath}`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `[CertificateListener] ❌ Failed to generate buyer ownership certificate for trade ${event.tradeId}:`,
+          error.stack || error.message || error,
+        );
+      }
+
+      // 2. Generate transaction certificate for SELLER
+      try {
+        const sellerTransactionResult = await this.certificatesService.generateTransactionCertificateForSeller(
+          event.tradeId,
+          event.sellerInvestmentId,
+        );
+        this.logger.log(
+          `[CertificateListener] ✅ Seller transaction certificate generated successfully for trade ${event.tradeDisplayCode}: ${sellerTransactionResult.certificatePath}`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `[CertificateListener] ❌ Failed to generate seller transaction certificate for trade ${event.tradeId}:`,
+          error.stack || error.message || error,
+        );
+      }
+
+      // 3. Regenerate ownership certificate for SELLER (with updated token count after sale)
+      try {
+        const sellerOwnershipResult = await this.certificatesService.generateOwnershipCertificate(
+          event.sellerId,
+          event.propertyId,
+          event.sellerInvestmentId,
+          'direct', // Seller's remaining tokens are from direct purchase
+          undefined,
+          trade.property?.organization?.name,
+        );
+        this.logger.log(
+          `[CertificateListener] ✅ Seller ownership certificate regenerated successfully for trade ${event.tradeDisplayCode}: ${sellerOwnershipResult.certificatePath}`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `[CertificateListener] ❌ Failed to regenerate seller ownership certificate for trade ${event.tradeId}:`,
+          error.stack || error.message || error,
+        );
+      }
+    } catch (error) {
+      this.logger.error('[CertificateListener] ❌ Failed to handle marketplace trade certificate generation:', error);
       console.error('[CertificateListener] Full error:', error);
       // Don't throw - certificate generation failure shouldn't break the system
     }

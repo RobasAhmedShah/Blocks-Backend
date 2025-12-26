@@ -13,6 +13,9 @@ import { Organization } from '../organizations/entities/organization.entity';
 import { DistributeRoiDto } from './dto/distribute-roi.dto';
 import { RewardDistributedEvent } from '../events/reward.events';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TokenLock } from '../marketplace/entities/token-lock.entity';
+import { MarketplaceListing } from '../marketplace/entities/marketplace-listing.entity';
+import { MarketplaceTrade } from '../marketplace/entities/marketplace-trade.entity';
 
 @Injectable()
 export class RewardsService {
@@ -63,12 +66,42 @@ export class RewardsService {
       // Process rewards per user (aggregate all their investments)
       for (const [userId, userInvestments] of investmentsByUser) {
         // Calculate total ROI share for this user across all their investments
-        let totalUserTokens = new Decimal(0);
+        // IMPORTANT: Exclude locked tokens (in active listings)
+        // Note: Sold tokens are already excluded because investment.tokensPurchased is reduced when tokens are sold
+        let totalAvailableTokens = new Decimal(0);
+
         for (const investment of userInvestments) {
-          totalUserTokens = totalUserTokens.plus(investment.tokensPurchased as Decimal);
+          // Current tokens owned (already excludes sold tokens since tokensPurchased is reduced on sale)
+          const ownedTokens = investment.tokensPurchased as Decimal;
+
+          // Get locked tokens from active listings for this investment
+          const locks = await manager
+            .createQueryBuilder(TokenLock, 'lock')
+            .innerJoin('lock.listing', 'listing')
+            .where('lock.investment_id = :investmentId', { investmentId: investment.id })
+            .andWhere('listing.status = :status', { status: 'active' })
+            .getMany();
+
+          let lockedTokens = new Decimal(0);
+          for (const lock of locks) {
+            lockedTokens = lockedTokens.plus(lock.lockedTokens as Decimal);
+          }
+
+          // Available tokens = owned - locked
+          // (Sold tokens are already excluded from ownedTokens)
+          const availableFromInvestment = ownedTokens.minus(lockedTokens);
+          if (availableFromInvestment.gt(0)) {
+            totalAvailableTokens = totalAvailableTokens.plus(availableFromInvestment);
+          }
         }
-        
-        const roiShare = totalUserTokens.div(totalTokens).mul(totalRoi);
+
+        // If no available tokens, skip ROI for this user
+        if (totalAvailableTokens.lte(0)) {
+          this.logger.log(`Skipping ROI for user ${userId} - no available tokens`);
+          continue;
+        }
+
+        const roiShare = totalAvailableTokens.div(totalTokens).mul(totalRoi);
 
         // Fetch wallet with lock
         const wallet = await manager

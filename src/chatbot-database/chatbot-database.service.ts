@@ -16,19 +16,42 @@ export class ChatbotDatabaseService {
     displayCode?: string;
   }) {
     const { propertyId, propertyTitle, displayCode } = args;
-    const queryBuilder = this.propertyRepository.createQueryBuilder('property');
-
+    
+    // Use findOne with explicit where clause to avoid query builder column name issues
+    // TypeORM's findOne automatically handles column name mapping from entity to database
     if (propertyId) {
-      queryBuilder.where('property.id = :id', { id: propertyId });
+      return await this.propertyRepository.findOne({ where: { id: propertyId } });
     } else if (displayCode) {
-      queryBuilder.where('property.displayCode = :code', { code: displayCode });
+      return await this.propertyRepository.findOne({ where: { displayCode } });
     } else if (propertyTitle) {
-      queryBuilder.where('property.title ILIKE :title', { title: `%${propertyTitle}%` });
+      // For title search, use raw SQL to get the ID first, then use findOne
+      // This avoids TypeORM query builder column name mapping issues with documents
+      try {
+        const rawResult = await this.propertyRepository.query(
+          `SELECT id FROM properties WHERE title ILIKE $1 LIMIT 1`,
+          [`%${propertyTitle}%`],
+        );
+        
+        if (rawResult && rawResult.length > 0) {
+          // Use findOne with the ID - this uses the entity mapping which handles documents correctly
+          // findOne generates SQL without aliases, so it should work correctly
+          const property = await this.propertyRepository.findOne({ where: { id: rawResult[0].id } });
+          return property;
+        }
+        
+        return null;
+      } catch (error) {
+        // If findOne fails due to documents column issue, fall back to raw SQL for all columns
+        console.error('Error in getPropertyDetails with findOne, falling back to raw SQL:', error);
+        const rawResult = await this.propertyRepository.query(
+          `SELECT * FROM properties WHERE title ILIKE $1 LIMIT 1`,
+          [`%${propertyTitle}%`],
+        );
+        return rawResult && rawResult.length > 0 ? (rawResult[0] as any) : null;
+      }
     } else {
       throw new Error('Please provide propertyId, propertyTitle, or displayCode');
     }
-
-    return await queryBuilder.getOne();
   }
 
   async searchProperties(args: {

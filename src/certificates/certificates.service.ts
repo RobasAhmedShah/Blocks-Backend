@@ -5,6 +5,7 @@ import { Transaction } from '../transactions/entities/transaction.entity';
 import { Investment } from '../investments/entities/investment.entity';
 import { Property } from '../properties/entities/property.entity';
 import { User } from '../admin/entities/user.entity';
+import { MarketplaceTrade } from '../marketplace/entities/marketplace-trade.entity';
 import { SupabaseService } from '../supabase/supabase.service';
 import { PdfService } from '../pdf/pdf.service';
 import * as ejs from 'ejs';
@@ -26,6 +27,8 @@ export class CertificatesService {
     private readonly propertyRepo: Repository<Property>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(MarketplaceTrade)
+    private readonly marketplaceTradeRepo: Repository<MarketplaceTrade>,
     private readonly supabaseService: SupabaseService,
     private readonly pdfService: PdfService,
   ) {
@@ -491,6 +494,616 @@ export class CertificatesService {
       return null;
     }
   }
+
+  /**
+   * Generate marketplace trade certificate PDF (transfer certificate)
+   */
+  async generateMarketplaceTradeCertificate(
+    tradeId: string,
+  ): Promise<{
+    certificatePath: string;
+    signedUrl: string;
+  }> {
+    this.logger.log(`[CertificatesService] 🔄 Generating marketplace trade certificate for: ${tradeId}`);
+
+    try {
+      // Load trade with relations
+      const trade = await this.marketplaceTradeRepo.findOne({
+        where: { id: tradeId },
+        relations: ['buyer', 'seller', 'property', 'property.organization', 'listing'],
+      });
+
+      if (!trade) {
+        this.logger.error(`[CertificatesService] ❌ Marketplace trade ${tradeId} not found`);
+        throw new NotFoundException(`Marketplace trade ${tradeId} not found`);
+      }
+
+      if (!trade.buyer) {
+        this.logger.error(`[CertificatesService] ❌ Trade buyer not found for trade ${tradeId}`);
+        throw new NotFoundException('Trade buyer not found');
+      }
+
+      if (!trade.property) {
+        this.logger.error(`[CertificatesService] ❌ Trade property not found for trade ${tradeId}`);
+        throw new NotFoundException('Trade property not found');
+      }
+
+      // Check if certificate already exists
+      if (trade.certificatePath) {
+        this.logger.log(`[CertificatesService] ✅ Certificate already exists: ${trade.certificatePath}`);
+        
+        // Extract relative path if it's a full URL (for signed URL generation)
+        let relativePath = trade.certificatePath;
+        if (trade.certificatePath.startsWith('http://') || trade.certificatePath.startsWith('https://')) {
+          const urlParts = trade.certificatePath.split('/storage/v1/object/public/Marketplace/');
+          relativePath = urlParts.length > 1 ? urlParts[1] : trade.certificatePath;
+        }
+        
+        const signedUrl = await this.supabaseService.getMarketplaceCertificateSignedUrl(relativePath);
+        return {
+          certificatePath: trade.certificatePath, // Return stored full URL
+          signedUrl,
+        };
+      }
+
+      this.logger.log(`[CertificatesService] 📄 Starting PDF generation for marketplace trade ${trade.displayCode}`);
+
+      // Get buyer's total investment for this property to calculate ownership
+      const buyerInvestments = await this.investmentRepo.find({
+        where: {
+          userId: trade.buyerId,
+          propertyId: trade.propertyId,
+          status: 'confirmed',
+        },
+      });
+
+      let totalBuyerTokens = new Decimal(0);
+      for (const inv of buyerInvestments) {
+        totalBuyerTokens = totalBuyerTokens.plus(inv.tokensPurchased as Decimal);
+      }
+
+      const totalTokens = trade.property.totalTokens || new Decimal(0);
+      const ownershipPercentage = totalTokens.gt(0)
+        ? totalBuyerTokens.div(totalTokens).times(100)
+        : new Decimal(0);
+
+      // Get stamps/assets URLs
+      const secpStampUrl = this.supabaseService.getAssetUrl('stamps/secp.png');
+      const sbpStampUrl = this.supabaseService.getAssetUrl('stamps/sbp.png');
+
+      // Prepare certificate data for PDFKit
+      const certificateData = {
+        department: 'Blocks Token Transfer Certificate',
+        subDepartment: 'Marketplace Trade',
+        boxNo: trade.displayCode || 'N/A',
+        regNo: `REG-${trade.displayCode}`,
+        ownerName: trade.buyer.fullName || trade.buyer.email,
+        ownerAddress: trade.buyer.email || 'N/A',
+        propertyId: trade.property.displayCode,
+        location: `${trade.property.city || ''}, ${trade.property.country || ''}`.trim() || 'N/A',
+        surveyNo: 'N/A',
+        area: 'N/A',
+        usage: trade.property.type || 'N/A',
+        tokensPurchased: trade.tokensBought.toString(),
+        totalTokens: totalTokens.toString(),
+        ownershipPercentage: ownershipPercentage.toFixed(8),
+        tokenPrice: trade.pricePerToken.toString(),
+        totalAmount: trade.totalUSDT.toString(),
+        averagePrice: trade.pricePerToken.toString(), // For marketplace, price per token is the purchase price
+        expectedROI: trade.property.expectedROI?.toString() || '0',
+        authorityName: 'A. B. Registrar',
+        designation: 'Registrar of Deeds',
+        serial: `CERT-${trade.displayCode}-${Date.now()}`,
+        date: trade.createdAt.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        }),
+        secpStampUrl,
+        sbpStampUrl,
+        // Additional marketplace-specific fields
+        sellerName: trade.seller?.fullName || trade.seller?.email || 'N/A',
+        listingCode: trade.listing?.displayCode || 'N/A',
+        transferType: 'Marketplace Transfer',
+      };
+
+      this.logger.log(`[CertificatesService] 📄 Generating PDF certificate using PDFKit...`);
+
+      // Generate PDF using PDFKit
+      const pdfBuffer = await this.pdfService.generateCertificate(certificateData);
+
+      this.logger.log(`[CertificatesService] 📦 PDF generated (${pdfBuffer.length} bytes)`);
+
+      // Upload to Supabase Marketplace bucket
+      const filePath = `trades/${trade.buyerId}/${trade.id}.pdf`;
+      this.logger.log(`[CertificatesService] ☁️ Uploading to Supabase Marketplace bucket: ${filePath}`);
+      
+      const { path: uploadedPath } = await this.supabaseService.uploadMarketplaceCertificate(
+        filePath,
+        pdfBuffer,
+      );
+
+      this.logger.log(`[CertificatesService] ✅ Uploaded to Supabase: ${uploadedPath}`);
+
+      // Get full public URL
+      const fullPublicUrl = this.supabaseService.getMarketplaceCertificatePublicUrl(uploadedPath);
+      this.logger.log(`[CertificatesService] 🔗 Full public URL: ${fullPublicUrl}`);
+
+      // Save certificate path to trade
+      await this.marketplaceTradeRepo.update(
+        { id: trade.id },
+        { certificatePath: fullPublicUrl }
+      );
+
+      // Verify it was saved
+      const updatedTrade = await this.marketplaceTradeRepo.findOne({ where: { id: trade.id } });
+      if (updatedTrade?.certificatePath === fullPublicUrl) {
+        this.logger.log(`[CertificatesService] ✅ Verified: Certificate path saved to trade ${trade.displayCode}: ${fullPublicUrl}`);
+      } else {
+        this.logger.error(`[CertificatesService] ❌ FAILED: Certificate path NOT saved to trade ${trade.displayCode}`);
+        throw new Error(`Failed to save certificate path to trade ${trade.id}`);
+      }
+
+      // ✅ ALSO save certificatePath to buyer's investment (so it shows in mobile app)
+      // The investment ID should be passed via the event, but we can also find it via buyerTransactionId
+      let buyerInvestmentId: string | undefined;
+      
+      // Try to get investment ID from trade metadata if available
+      if (trade.metadata?.buyerInvestmentId) {
+        buyerInvestmentId = trade.metadata.buyerInvestmentId;
+      }
+
+      // If not in metadata, find it via buyerTransactionId
+      if (!buyerInvestmentId && trade.buyerTransactionId) {
+        const buyerTransaction = await this.transactionRepo.findOne({
+          where: { id: trade.buyerTransactionId },
+        });
+
+        if (buyerTransaction && buyerTransaction.userId && buyerTransaction.propertyId) {
+          // Find the most recent confirmed investment for this user/property
+          const buyerInvestment = await this.investmentRepo.findOne({
+            where: {
+              userId: buyerTransaction.userId,
+              propertyId: buyerTransaction.propertyId,
+              status: 'confirmed',
+            },
+            order: { updatedAt: 'DESC' }, // Use updatedAt since marketplace updates existing investments
+          });
+          
+          if (buyerInvestment) {
+            buyerInvestmentId = buyerInvestment.id;
+          }
+        }
+      }
+
+      if (buyerInvestmentId) {
+        // Update investment with certificate path
+        await this.investmentRepo.update(
+          { id: buyerInvestmentId },
+          { certificatePath: fullPublicUrl }
+        );
+
+        // Verify it was saved
+        const updatedInvestment = await this.investmentRepo.findOne({
+          where: { id: buyerInvestmentId },
+        });
+
+        if (updatedInvestment?.certificatePath === fullPublicUrl) {
+          this.logger.log(
+            `[CertificatesService] ✅ Verified: Certificate path also saved to buyer's investment ${updatedInvestment.displayCode} (${buyerInvestmentId}): ${fullPublicUrl}`,
+          );
+        } else {
+          this.logger.warn(
+            `[CertificatesService] ⚠️ Warning: Certificate path NOT saved to buyer's investment ${buyerInvestmentId}`,
+          );
+        }
+      } else {
+        this.logger.warn(
+          `[CertificatesService] ⚠️ Could not find buyer's investment for trade ${trade.displayCode} to save certificate path`,
+        );
+      }
+
+      // Generate signed URL for immediate access
+      const signedUrl = await this.supabaseService.getMarketplaceCertificateSignedUrl(uploadedPath);
+
+      this.logger.log(`[CertificatesService] ✅ Marketplace trade certificate generated successfully: ${fullPublicUrl}`);
+
+      return {
+        certificatePath: fullPublicUrl, // Return full URL
+        signedUrl,
+      };
+    } catch (error) {
+      this.logger.error(`[CertificatesService] ❌ Error generating marketplace trade certificate:`, error.stack || error.message || error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get marketplace trade certificate signed URL
+   */
+  async getMarketplaceTradeCertificate(tradeId: string): Promise<string> {
+    const trade = await this.marketplaceTradeRepo.findOne({
+      where: { id: tradeId },
+    });
+
+    if (!trade) {
+      throw new NotFoundException(`Marketplace trade ${tradeId} not found`);
+    }
+
+    if (!trade.certificatePath) {
+      // Generate certificate if it doesn't exist
+      const result = await this.generateMarketplaceTradeCertificate(tradeId);
+      return result.signedUrl;
+    }
+
+    // Extract relative path from full URL
+    if (trade.certificatePath.startsWith('http://') || trade.certificatePath.startsWith('https://')) {
+      const urlParts = trade.certificatePath.split('/storage/v1/object/public/Marketplace/');
+      const relativePath = urlParts.length > 1 ? urlParts[1] : trade.certificatePath;
+      return await this.supabaseService.getMarketplaceCertificateSignedUrl(relativePath);
+    } else {
+      return await this.supabaseService.getMarketplaceCertificateSignedUrl(trade.certificatePath);
+    }
+  }
+
+  /**
+   * Generate ownership certificate with CURRENT token count for a user/property
+   * This certificate reflects the current state of ownership, not individual transactions
+   * Should be regenerated whenever tokens change (buy/sell)
+   */
+  async generateOwnershipCertificate(
+    userId: string,
+    propertyId: string,
+    investmentId?: string,
+    source: 'direct' | 'marketplace' = 'direct',
+    sellerInfo?: { name: string; email: string },
+    organizationName?: string,
+  ): Promise<{
+    certificatePath: string;
+    signedUrl: string;
+  }> {
+    this.logger.log(`[CertificatesService] 🔄 Generating ownership certificate for user: ${userId}, property: ${propertyId}, source: ${source}`);
+
+    try {
+      // Load user and property
+      const user = await this.userRepo.findOne({ where: { id: userId } });
+      if (!user) {
+        throw new NotFoundException(`User ${userId} not found`);
+      }
+
+      const property = await this.propertyRepo.findOne({
+        where: { id: propertyId },
+        relations: ['organization'],
+      });
+      if (!property) {
+        throw new NotFoundException(`Property ${propertyId} not found`);
+      }
+
+      // Get ALL confirmed investments for this user/property to calculate CURRENT total tokens
+      const allInvestments = await this.investmentRepo.find({
+        where: {
+          userId,
+          propertyId,
+          status: 'confirmed',
+        },
+      });
+
+      // Calculate current total tokens and total invested amount
+      let currentTotalTokens = new Decimal(0);
+      let totalInvestedAmount = new Decimal(0);
+      for (const inv of allInvestments) {
+        currentTotalTokens = currentTotalTokens.plus(inv.tokensPurchased as Decimal);
+        totalInvestedAmount = totalInvestedAmount.plus(inv.amountUSDT as Decimal);
+      }
+
+      if (currentTotalTokens.lte(0)) {
+        throw new Error('User has no tokens for this property');
+      }
+
+      // Calculate ownership percentage
+      const totalTokens = property.totalTokens || new Decimal(0);
+      const ownershipPercentage = totalTokens.gt(0)
+        ? currentTotalTokens.div(totalTokens).times(100)
+        : new Decimal(0);
+
+      // Calculate average price
+      const averagePrice = currentTotalTokens.gt(0)
+        ? totalInvestedAmount.div(currentTotalTokens)
+        : new Decimal(0);
+
+      // Get stamps
+      const secpStampUrl = this.supabaseService.getAssetUrl('stamps/secp.png');
+      const sbpStampUrl = this.supabaseService.getAssetUrl('stamps/sbp.png');
+
+      // Determine ownership statement based on source
+      let ownershipStatement = '';
+      if (source === 'direct') {
+        const orgName = organizationName || property.organization?.name || 'BLOCKS';
+        ownershipStatement = `This certifies that ${user.fullName || user.email}, residing at ${user.email}, is the lawful holder of fractional tokenized ownership in the property described below. These tokens were purchased directly from ${orgName} (BLOCKS Platform).`;
+      } else {
+        const sellerName = sellerInfo?.name || 'Unknown Seller';
+        ownershipStatement = `This certifies that ${user.fullName || user.email}, residing at ${user.email}, is the lawful holder of fractional tokenized ownership in the property described below. These tokens were purchased from the marketplace from ${sellerName} (${sellerInfo?.email || 'N/A'}).`;
+      }
+
+      // Prepare certificate data
+      const certificateData = {
+        department: 'Blocks Token Ownership Certificate',
+        subDepartment: 'Certificate of Tokenized Property Ownership',
+        boxNo: `OWN-${userId.substring(0, 8)}-${propertyId.substring(0, 8)}`,
+        regNo: `REG-OWN-${Date.now()}`,
+        ownerName: user.fullName || user.email,
+        ownerAddress: user.email || 'N/A',
+        propertyId: property.displayCode,
+        location: `${property.city || ''}, ${property.country || ''}`.trim() || 'N/A',
+        surveyNo: 'N/A',
+        area: 'N/A',
+        usage: property.type || 'N/A',
+        tokensPurchased: currentTotalTokens.toString(), // CURRENT total tokens
+        totalTokens: totalTokens.toString(),
+        ownershipPercentage: ownershipPercentage.toFixed(8),
+        tokenPrice: property.pricePerTokenUSDT?.toString() || '0',
+        totalAmount: totalInvestedAmount.toString(), // Total invested amount
+        averagePrice: averagePrice.toFixed(2),
+        expectedROI: property.expectedROI?.toString() || '0',
+        authorityName: 'A. B. Registrar',
+        designation: 'Registrar of Deeds',
+        serial: `CERT-OWN-${userId.substring(0, 8)}-${propertyId.substring(0, 8)}-${Date.now()}`,
+        date: new Date().toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        }),
+        secpStampUrl,
+        sbpStampUrl,
+        ownershipStatement, // Custom ownership statement
+      };
+
+      // Generate PDF
+      const pdfBuffer = await this.pdfService.generateCertificate(certificateData);
+      this.logger.log(`[CertificatesService] 📦 PDF generated (${pdfBuffer.length} bytes)`);
+
+      // Upload to Supabase
+      const filePath = `ownership/${userId}/${propertyId}/${Date.now()}.pdf`;
+      this.logger.log(`[CertificatesService] ☁️ Uploading to Supabase: ${filePath}`);
+      
+      const { path: uploadedPath } = await this.supabaseService.uploadCertificate(
+        filePath,
+        pdfBuffer,
+      );
+
+      // Get full public URL
+      const fullPublicUrl = this.supabaseService.getCertificatePublicUrl(uploadedPath);
+      this.logger.log(`[CertificatesService] 🔗 Full public URL: ${fullPublicUrl}`);
+
+      // Update investment certificate path (void old one, set new one)
+      // Find the investment to update (use provided ID or find most recent)
+      let investmentToUpdate: Investment | null = null;
+      
+      if (investmentId) {
+        investmentToUpdate = await this.investmentRepo.findOne({
+          where: { id: investmentId },
+        });
+      }
+      
+      if (!investmentToUpdate) {
+        // Find the most recent confirmed investment for this user/property
+        investmentToUpdate = await this.investmentRepo.findOne({
+          where: {
+            userId,
+            propertyId,
+            status: 'confirmed',
+          },
+          order: { updatedAt: 'DESC' },
+        });
+      }
+
+      if (investmentToUpdate) {
+        // Void old certificate by clearing it, then set new one
+        // (In future, we could track certificate history in a separate table)
+        await this.investmentRepo.update(
+          { id: investmentToUpdate.id },
+          { certificatePath: fullPublicUrl }
+        );
+
+        // Verify it was saved
+        const updatedInvestment = await this.investmentRepo.findOne({
+          where: { id: investmentToUpdate.id },
+        });
+
+        if (updatedInvestment?.certificatePath === fullPublicUrl) {
+          this.logger.log(
+            `[CertificatesService] ✅ Verified: Ownership certificate saved to investment ${updatedInvestment.displayCode} (${updatedInvestment.id}): ${fullPublicUrl}`,
+          );
+        } else {
+          this.logger.warn(
+            `[CertificatesService] ⚠️ Warning: Certificate path NOT saved to investment ${updatedInvestment?.displayCode || investmentId}`,
+          );
+        }
+      } else {
+        this.logger.warn(
+          `[CertificatesService] ⚠️ Could not find investment to update certificate path for user ${userId}, property ${propertyId}`,
+        );
+      }
+
+      // Generate signed URL
+      const signedUrl = await this.supabaseService.createSignedUrl(uploadedPath);
+
+      this.logger.log(`[CertificatesService] ✅ Ownership certificate generated successfully: ${fullPublicUrl}`);
+
+      return {
+        certificatePath: fullPublicUrl,
+        signedUrl,
+      };
+    } catch (error) {
+      this.logger.error(`[CertificatesService] ❌ Error generating ownership certificate:`, error.stack || error.message || error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate transaction certificate for seller when they sell tokens via marketplace
+   * This is a separate certificate type that shows the transfer/sale transaction
+   */
+  async generateTransactionCertificateForSeller(
+    tradeId: string,
+    sellerInvestmentId?: string,
+  ): Promise<{
+    certificatePath: string;
+    signedUrl: string;
+  }> {
+    this.logger.log(`[CertificatesService] 🔄 Generating transaction certificate for seller, trade: ${tradeId}`);
+
+    try {
+      // Load trade with relations
+      const trade = await this.marketplaceTradeRepo.findOne({
+        where: { id: tradeId },
+        relations: ['buyer', 'seller', 'property', 'property.organization', 'listing'],
+      });
+
+      if (!trade) {
+        throw new NotFoundException(`Marketplace trade ${tradeId} not found`);
+      }
+
+      if (!trade.seller) {
+        throw new NotFoundException('Trade seller not found');
+      }
+
+      if (!trade.property) {
+        throw new NotFoundException('Trade property not found');
+      }
+
+      // Get seller's CURRENT token count after sale
+      const sellerInvestments = await this.investmentRepo.find({
+        where: {
+          userId: trade.sellerId,
+          propertyId: trade.propertyId,
+          status: 'confirmed',
+        },
+      });
+
+      let currentSellerTokens = new Decimal(0);
+      for (const inv of sellerInvestments) {
+        currentSellerTokens = currentSellerTokens.plus(inv.tokensPurchased as Decimal);
+      }
+
+      // Get stamps
+      const secpStampUrl = this.supabaseService.getAssetUrl('stamps/secp.png');
+      const sbpStampUrl = this.supabaseService.getAssetUrl('stamps/sbp.png');
+
+      // Prepare transaction certificate data
+      const certificateData = {
+        department: 'Blocks Token Transaction Certificate',
+        subDepartment: 'Certificate of Token Transfer',
+        boxNo: trade.displayCode || 'N/A',
+        regNo: `REG-TXN-${trade.displayCode}`,
+        ownerName: trade.seller.fullName || trade.seller.email,
+        ownerAddress: trade.seller.email || 'N/A',
+        propertyId: trade.property.displayCode,
+        location: `${trade.property.city || ''}, ${trade.property.country || ''}`.trim() || 'N/A',
+        surveyNo: 'N/A',
+        area: 'N/A',
+        usage: trade.property.type || 'N/A',
+        tokensPurchased: trade.tokensBought.toString(), // Tokens that were sold (required field)
+        totalTokens: trade.property.totalTokens?.toString() || '0',
+        ownershipPercentage: '0', // Not applicable for transaction certificate
+        tokenPrice: trade.pricePerToken.toString(),
+        totalAmount: trade.totalUSDT.toString(),
+        averagePrice: trade.pricePerToken.toString(),
+        expectedROI: trade.property.expectedROI?.toString() || '0',
+        authorityName: 'A. B. Registrar',
+        designation: 'Registrar of Deeds',
+        serial: `CERT-TXN-${trade.displayCode}-${Date.now()}`,
+        date: trade.createdAt.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        }),
+        secpStampUrl,
+        sbpStampUrl,
+        // Transaction-specific fields (these are additional fields, not part of base CertificateData)
+        tokensSold: trade.tokensBought.toString(), // Tokens that were sold
+        tokensRemaining: currentSellerTokens.toString(), // Remaining tokens after sale
+        buyerName: trade.buyer?.fullName || trade.buyer?.email || 'N/A',
+        transactionType: 'Marketplace Sale',
+        transactionStatement: `This certifies that ${trade.seller.fullName || trade.seller.email} has transferred ${trade.tokensBought.toString()} tokens of ${trade.property.title} to ${trade.buyer?.fullName || trade.buyer?.email || 'N/A'} via the BLOCKS Marketplace. After this transaction, ${trade.seller.fullName || trade.seller.email} retains ${currentSellerTokens.toString()} tokens of this property.`,
+      };
+
+      // Generate PDF
+      const pdfBuffer = await this.pdfService.generateCertificate(certificateData);
+      this.logger.log(`[CertificatesService] 📦 PDF generated (${pdfBuffer.length} bytes)`);
+
+      // Upload to Supabase Marketplace bucket (for transaction certificates)
+      const filePath = `transactions/sellers/${trade.sellerId}/${trade.id}.pdf`;
+      this.logger.log(`[CertificatesService] ☁️ Uploading to Supabase Marketplace bucket: ${filePath}`);
+      
+      const { path: uploadedPath } = await this.supabaseService.uploadMarketplaceCertificate(
+        filePath,
+        pdfBuffer,
+      );
+
+      // Get full public URL
+      const fullPublicUrl = this.supabaseService.getMarketplaceCertificatePublicUrl(uploadedPath);
+      this.logger.log(`[CertificatesService] 🔗 Full public URL: ${fullPublicUrl}`);
+
+      // Save to seller's transaction (if sellerTransactionId exists)
+      if (trade.sellerTransactionId) {
+        await this.transactionRepo.update(
+          { id: trade.sellerTransactionId },
+          { certificatePath: fullPublicUrl }
+        );
+        this.logger.log(`[CertificatesService] ✅ Transaction certificate saved to seller transaction ${trade.sellerTransactionId}`);
+      }
+
+      // Generate signed URL
+      const signedUrl = await this.supabaseService.getMarketplaceCertificateSignedUrl(uploadedPath);
+
+      this.logger.log(`[CertificatesService] ✅ Transaction certificate for seller generated successfully: ${fullPublicUrl}`);
+
+      return {
+        certificatePath: fullPublicUrl,
+        signedUrl,
+      };
+    } catch (error) {
+      this.logger.error(`[CertificatesService] ❌ Error generating transaction certificate for seller:`, error.stack || error.message || error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get seller transaction certificate signed URL
+   */
+  async getSellerTransactionCertificate(tradeId: string): Promise<string> {
+    const trade = await this.marketplaceTradeRepo.findOne({
+      where: { id: tradeId },
+    });
+
+    if (!trade) {
+      throw new NotFoundException(`Marketplace trade ${tradeId} not found`);
+    }
+
+    // Check if seller transaction certificate exists (stored in sellerTransactionId)
+    if (trade.sellerTransactionId) {
+      const sellerTransaction = await this.transactionRepo.findOne({
+        where: { id: trade.sellerTransactionId },
+      });
+
+      if (sellerTransaction?.certificatePath) {
+        // Extract relative path from full URL
+        if (sellerTransaction.certificatePath.startsWith('http://') || sellerTransaction.certificatePath.startsWith('https://')) {
+          const urlParts = sellerTransaction.certificatePath.split('/storage/v1/object/public/Marketplace/');
+          const relativePath = urlParts.length > 1 ? urlParts[1] : sellerTransaction.certificatePath;
+          return await this.supabaseService.getMarketplaceCertificateSignedUrl(relativePath);
+        } else {
+          return await this.supabaseService.getMarketplaceCertificateSignedUrl(sellerTransaction.certificatePath);
+        }
+      }
+    }
+
+    // If certificate doesn't exist, generate it
+    const result = await this.generateTransactionCertificateForSeller(tradeId);
+    return result.signedUrl;
+  }
+
 
   /**
    * Generate document hash for verification

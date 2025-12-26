@@ -7,6 +7,7 @@ export class SupabaseService implements OnModuleInit {
   private supabase: SupabaseClient;
   private readonly assetsBucket: string;
   private readonly certificatesBucket: string;
+  private readonly marketplaceBucket: string;
   private readonly propertyDocumentsBucket: string;
   private readonly kycDocumentsBucket: string;
   private readonly profileImagesBucket: string;
@@ -30,6 +31,7 @@ export class SupabaseService implements OnModuleInit {
 
     this.assetsBucket = this.configService.get<string>('SUPABASE_ASSETS_BUCKET', 'assets');
     this.certificatesBucket = this.configService.get<string>('SUPABASE_CERTIFICATES_BUCKET', 'certificates');
+    this.marketplaceBucket = this.configService.get<string>('SUPABASE_MARKETPLACE_BUCKET', 'Marketplace');
     this.propertyDocumentsBucket = this.configService.get<string>(
       'SUPABASE_PROPERTY_DOCUMENTS_BUCKET',
       'property-documents',
@@ -52,6 +54,7 @@ export class SupabaseService implements OnModuleInit {
     console.log('Supabase service initialized');
     console.log(`Assets bucket: ${this.assetsBucket}`);
     console.log(`Certificates bucket: ${this.certificatesBucket}`);
+    console.log(`Marketplace bucket: ${this.marketplaceBucket}`);
     console.log(`Property documents bucket: ${this.propertyDocumentsBucket}`);
     console.log(`KYC documents bucket: ${this.kycDocumentsBucket}`);
     console.log(`Profile images bucket: ${this.profileImagesBucket}`);
@@ -343,6 +346,62 @@ export class SupabaseService implements OnModuleInit {
     if (error) {
       throw new Error(`Failed to delete bank transfer receipt: ${error.message}`);
     }
+  }
+
+  /**
+   * Upload marketplace trade certificate PDF to Marketplace bucket
+   */
+  async uploadMarketplaceCertificate(
+    filePath: string,
+    fileBuffer: Buffer,
+    contentType: string = 'application/pdf',
+  ): Promise<{ path: string; publicUrl: string }> {
+    const { data, error } = await this.supabase.storage
+      .from(this.marketplaceBucket)
+      .upload(filePath, fileBuffer, {
+        contentType,
+        upsert: true, // Allow overwriting if file already exists
+      });
+
+    if (error) {
+      throw new Error(`Failed to upload marketplace certificate to Supabase: ${error.message}`);
+    }
+
+    // Get public URL (will be null for private buckets, use signed URL instead)
+    const { data: urlData } = this.supabase.storage
+      .from(this.marketplaceBucket)
+      .getPublicUrl(data.path);
+
+    return {
+      path: data.path,
+      publicUrl: urlData.publicUrl,
+    };
+  }
+
+  /**
+   * Generate signed URL for marketplace certificate (for private bucket access)
+   */
+  async getMarketplaceCertificateSignedUrl(filePath: string, expiresIn: number = 3600): Promise<string> {
+    const { data, error } = await this.supabase.storage
+      .from(this.marketplaceBucket)
+      .createSignedUrl(filePath, expiresIn);
+
+    if (error) {
+      throw new Error(`Failed to generate signed URL for marketplace certificate: ${error.message}`);
+    }
+
+    return data.signedUrl;
+  }
+
+  /**
+   * Get full public URL for marketplace certificate (for saving in database)
+   */
+  getMarketplaceCertificatePublicUrl(filePath: string): string {
+    const { data } = this.supabase.storage
+      .from(this.marketplaceBucket)
+      .getPublicUrl(filePath);
+
+    return data.publicUrl;
   }
 }
 

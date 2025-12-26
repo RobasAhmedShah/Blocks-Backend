@@ -137,6 +137,8 @@ export class MobileTransactionsService {
       'return': 'rental_income', // Map return to rental_income as well
       'inflow': 'deposit', // Map inflow to deposit
       'fee': 'withdraw', // Map fee to withdraw (money going out)
+      'marketplace_buy': 'investment', // Map marketplace_buy to investment (money going out)
+      'marketplace_sell': 'deposit', // Map marketplace_sell to deposit (money coming in)
     };
     
     type = typeMapping[transaction.type] || transaction.type;
@@ -147,14 +149,19 @@ export class MobileTransactionsService {
       : new Decimal(0);
     
     // Mobile app expects:
-    // - Positive amounts for deposits and rental income
-    // - Negative amounts for withdrawals and investments
+    // - Positive amounts for deposits, rental income, and marketplace_sell (money coming in)
+    // - Negative amounts for withdrawals, investments, and marketplace_buy (money going out)
     let amount = amountUSDT.toNumber();
     
-    if (transaction.type === 'investment' || transaction.type === 'withdrawal' || transaction.type === 'fee') {
-      amount = -Math.abs(amount); // Ensure negative for investments, withdrawals, and fees
+    if (transaction.type === 'investment' || 
+        transaction.type === 'withdrawal' || 
+        transaction.type === 'fee' ||
+        transaction.type === 'marketplace_buy') {
+      // Money going out: investments, withdrawals, fees, marketplace purchases
+      amount = -Math.abs(amount);
     } else {
-      amount = Math.abs(amount); // Ensure positive for deposits, rewards, returns, inflows
+      // Money coming in: deposits, rewards, returns, inflows, marketplace sales
+      amount = Math.abs(amount);
     }
 
     // Clean description to remove BWR- and BTR- codes (hide from users)
@@ -189,6 +196,8 @@ export class MobileTransactionsService {
       fee: 'Transaction fee',
       reward: `Rental income from ${transaction.property?.title || 'property'}`,
       inflow: 'Funds received',
+      marketplace_buy: `Purchased tokens from marketplace${transaction.property?.title ? ` - ${transaction.property.title}` : ''}`,
+      marketplace_sell: `Sold tokens on marketplace${transaction.property?.title ? ` - ${transaction.property.title}` : ''}`,
     };
 
     return typeMap[transaction.type] || 'Transaction';

@@ -9,11 +9,11 @@ export class Property {
   id: string;
 
   @Index()
-  @Column({ type: 'varchar', length: 32, unique: true })
+  @Column({ type: 'varchar', length: 32, unique: true, name: 'displayCode' })
   displayCode: string;
 
   @Index()
-  @Column({ type: 'uuid' })
+  @Column({ type: 'uuid', name: 'organizationId' })
   organizationId: string;
 
   @ManyToOne(() => Organization, { onDelete: 'CASCADE' })
@@ -62,7 +62,7 @@ export class Property {
   @Column({ type: 'jsonb', nullable: true })
   images?: any | null;
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'jsonb', nullable: true, name: 'documents' })
   documents?: any | null;
 
   @Column({ type: 'text', nullable: true })

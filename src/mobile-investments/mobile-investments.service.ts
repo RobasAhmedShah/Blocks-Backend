@@ -29,7 +29,13 @@ export class MobileInvestmentsService {
           return null;
         }
       })
-      .filter((inv) => inv !== null); // Remove failed transformations
+      .filter((inv) => {
+        // Remove failed transformations
+        if (inv === null) return false;
+        // Filter out investments with zero or very small token counts (< 0.001)
+        // These shouldn't appear in the portfolio
+        return inv.tokens >= 0.001;
+      });
   }
 
   async findOne(id: string, userId?: string): Promise<any> {
