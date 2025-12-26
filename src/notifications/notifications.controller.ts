@@ -26,9 +26,9 @@ export class NotificationsController {
   @HttpCode(HttpStatus.OK)
   async processNotification(@Body() job: any, @Req() request: Request) {
     // Log the received job for debugging
-    this.logger.log(`Received notification job: ${JSON.stringify(job)}`);
-    this.logger.log(`Request body type: ${typeof request.body}`);
-    this.logger.log(`Request body keys: ${Object.keys(job || {})}`);
+    this.logger.log(`📥 Received notification job from QStash`);
+    this.logger.log(`📋 Job data: ${JSON.stringify(job, null, 2)}`);
+    this.logger.log(`📋 Request headers: ${JSON.stringify(request.headers, null, 2)}`);
     
     // Handle QStash body format - it might wrap the body
     let notificationJob: CreateNotificationJobDto;
@@ -36,20 +36,23 @@ export class NotificationsController {
     // Check if QStash wrapped the body (sometimes it sends { body: {...} })
     if (job.body && typeof job.body === 'object') {
       notificationJob = job.body;
-      this.logger.log('QStash wrapped body detected, using job.body');
+      this.logger.log('✅ QStash wrapped body detected, using job.body');
     } else if (job.userId) {
       notificationJob = job;
+      this.logger.log('✅ Direct job format detected');
     } else {
-      this.logger.error(`ERROR: Invalid job format! Received: ${JSON.stringify(job)}`);
+      this.logger.error(`❌ ERROR: Invalid job format! Received: ${JSON.stringify(job)}`);
       throw new Error('Invalid notification job format - userId is required');
     }
     
     if (!notificationJob.userId) {
-      this.logger.error(`ERROR: userId is missing! Full job: ${JSON.stringify(notificationJob)}`);
+      this.logger.error(`❌ ERROR: userId is missing! Full job: ${JSON.stringify(notificationJob)}`);
       throw new Error('userId is required in notification job');
     }
     
+    this.logger.log(`🚀 Calling processNotification for user ${notificationJob.userId}`);
     await this.notificationsService.processNotification(notificationJob);
+    this.logger.log(`✅ Notification processing completed for user ${notificationJob.userId}`);
     return { success: true };
   }
 

@@ -36,12 +36,15 @@ lerna-debug.log*
 !.vscode/extensions.json
 
 # dotenv environment variable files
-
+# IMPORTANT: Never commit .env files to GitHub - they contain sensitive credentials
+.env
+.env.*
 .env.development.local
 .env.test.local
 .env.production.local
 .env.local
-.env
+*.env
+!.env.example
 
 # temp directory
 .temp

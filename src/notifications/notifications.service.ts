@@ -226,13 +226,27 @@ export class NotificationsService {
   async queueNotification(job: CreateNotificationJobDto): Promise<void> {
     try {
       if (!this.qstash) {
-        this.logger.error('QStash not initialized - cannot queue notification');
+        this.logger.warn('QStash not initialized - sending notification directly');
+        // Fallback: send directly if QStash is not available
+        await this.processNotification(job);
+        return;
+      }
+
+      // Check if API_URL is localhost (QStash cannot reach it)
+      const isLocalhost = this.apiUrl.includes('localhost') || this.apiUrl.includes('127.0.0.1');
+      
+      if (isLocalhost) {
+        this.logger.warn('API_URL is localhost - QStash cannot reach it. Sending notification directly.');
+        // Fallback: send directly for localhost
+        await this.processNotification(job);
         return;
       }
 
       // Ensure no double slashes in URL
       const baseUrl = this.apiUrl.endsWith('/') ? this.apiUrl.slice(0, -1) : this.apiUrl;
       const processUrl = `${baseUrl}/api/notifications/process`;
+      
+      this.logger.log(`Queueing notification via QStash for user ${job.userId} to ${processUrl}`);
       
       await this.qstash.publishJSON({
         url: processUrl,
@@ -244,7 +258,14 @@ export class NotificationsService {
       this.logger.log(`Notification queued for user ${job.userId}`);
     } catch (error) {
       this.logger.error(`Failed to queue notification for user ${job.userId}:`, error);
-      throw error;
+      this.logger.warn('Attempting to send notification directly as fallback');
+      // Fallback: try sending directly if QStash fails
+      try {
+        await this.processNotification(job);
+      } catch (fallbackError) {
+        this.logger.error(`Fallback direct send also failed for user ${job.userId}:`, fallbackError);
+        throw error; // Throw original error
+      }
     }
   }
 
@@ -252,26 +273,36 @@ export class NotificationsService {
     const { userId, title, message, data } = job;
 
     try {
-      this.logger.log(`Processing notification for user ${userId}`);
+      this.logger.log(`🔔 Processing notification for user ${userId}`, {
+        title,
+        message,
+        hasData: !!data,
+      });
       
       // Fetch user with tokens
       const user = await this.userRepo.findOne({
         where: { id: userId },
-        select: ['id', 'expoToken', 'webPushSubscription'],
+        select: ['id', 'expoToken', 'webPushSubscription', 'email'],
       });
 
       if (!user) {
-        this.logger.warn(`User ${userId} not found`);
+        this.logger.warn(`❌ User ${userId} not found`);
         return;
       }
+
+      this.logger.log(`👤 Found user: ${user.email || userId}`, {
+        hasExpoToken: !!user.expoToken,
+        hasWebPush: !!user.webPushSubscription,
+        expoTokenPreview: user.expoToken ? user.expoToken.substring(0, 30) + '...' : 'none',
+      });
 
       // Check if user has any push tokens
       if (!user.expoToken && !user.webPushSubscription) {
-        this.logger.warn(`User ${userId} has no push tokens registered - skipping notification`);
+        this.logger.warn(`⚠️ User ${userId} (${user.email || 'no email'}) has no push tokens registered - skipping notification`);
         return;
       }
 
-      this.logger.log(`User ${userId} has tokens - expoToken: ${!!user.expoToken}, webPush: ${!!user.webPushSubscription}`);
+      this.logger.log(`✅ User ${userId} has tokens - expoToken: ${!!user.expoToken}, webPush: ${!!user.webPushSubscription}`);
 
       let notificationSent = false;
       let platform: 'expo' | 'web' | null = null;
@@ -305,7 +336,55 @@ export class NotificationsService {
           // Ensure URL is always included in notification data
           const notificationUrl = data?.url || '/notifications?context=portfolio';
           
-          if (isFCMToken && this.firebaseApp) {
+          // Prefer Expo if it's a valid Expo token (even if it looks like FCM)
+          // This prevents SenderId mismatch errors
+          if (isExpoToken) {
+            // Send via Expo service
+            this.logger.log(`📤 Sending via Expo (valid Expo token detected) to user ${userId}`);
+            const expoMessages: ExpoPushMessage[] = [
+              {
+                to: tokenStr,
+                sound: 'default',
+                title,
+                body: message,
+                data: {
+                  ...(data || {}),
+                  url: notificationUrl,
+                },
+              },
+            ];
+            
+            const expoChunks = this.expo.chunkPushNotifications(expoMessages);
+            const expoTickets: ExpoPushTicket[] = [];
+            
+            for (const chunk of expoChunks) {
+              try {
+                const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
+                expoTickets.push(...ticketChunk);
+              } catch (error) {
+                this.logger.error(`Error sending Expo push chunk:`, error);
+              }
+            }
+            
+            for (const ticket of expoTickets) {
+              if (ticket.status === 'error') {
+                this.logger.error(`Expo push error: ${ticket.message}`, ticket.details);
+                if (
+                  ticket.details?.error === 'DeviceNotRegistered' ||
+                  ticket.details?.error === 'InvalidCredentials' ||
+                  ticket.message?.includes('Invalid token')
+                ) {
+                  user.expoToken = null;
+                  await this.userRepo.save(user);
+                  this.logger.log(`Removed invalid Expo token for user ${userId}`);
+                }
+              } else {
+                notificationSent = true;
+                platform = 'expo';
+                this.logger.log(`✅ Expo notification sent successfully to user ${userId}`);
+              }
+            }
+          } else if (isFCMToken && this.firebaseApp) {
             // Send FCM token directly via Firebase Admin SDK
             this.logger.log(`📤 Sending FCM push notification to user ${userId}`, {
               token: tokenStr.substring(0, 20) + '...',
@@ -354,7 +433,7 @@ export class NotificationsService {
               platform = 'expo'; // Keep as 'expo' for consistency in database
             } catch (fcmError: any) {
               this.logger.error(`❌ Failed to send FCM notification to user ${userId}:`, {
-                error: fcmError.message,
+                error: fcmError.error || fcmError.message,
                 code: fcmError.code,
                 errorInfo: fcmError.errorInfo,
               });
@@ -369,6 +448,55 @@ export class NotificationsService {
                 user.expoToken = null;
                 await this.userRepo.save(user);
                 this.logger.log(`✅ Removed invalid FCM token for user ${userId}`);
+              } else if (
+                fcmError.code === 'messaging/mismatched-credential' ||
+                fcmError.code === 'messaging/sender-id-mismatch'
+              ) {
+                // SenderId mismatch - try Expo as fallback (token might be Expo format)
+                this.logger.warn(`🔄 FCM SenderId mismatch detected - trying Expo as fallback for user ${userId}`);
+                try {
+                  const expoMessages: ExpoPushMessage[] = [
+                    {
+                      to: tokenStr,
+                      sound: 'default',
+                      title,
+                      body: message,
+                      data: {
+                        ...(data || {}),
+                        url: notificationUrl,
+                      },
+                    },
+                  ];
+                  
+                  const expoChunks = this.expo.chunkPushNotifications(expoMessages);
+                  const expoTickets: ExpoPushTicket[] = [];
+                  
+                  for (const chunk of expoChunks) {
+                    const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
+                    expoTickets.push(...ticketChunk);
+                  }
+                  
+                  for (const ticket of expoTickets) {
+                    if (ticket.status === 'error') {
+                      this.logger.error(`Expo fallback error: ${ticket.message}`, ticket.details);
+                      if (
+                        ticket.details?.error === 'DeviceNotRegistered' ||
+                        ticket.details?.error === 'InvalidCredentials' ||
+                        ticket.message?.includes('Invalid token')
+                      ) {
+                        user.expoToken = null;
+                        await this.userRepo.save(user);
+                        this.logger.log(`Removed invalid token for user ${userId}`);
+                      }
+                    } else {
+                      notificationSent = true;
+                      platform = 'expo';
+                      this.logger.log(`✅ Push notification sent (Expo fallback) to user ${userId}`);
+                    }
+                  }
+                } catch (expoFallbackError) {
+                  this.logger.error(`Expo fallback also failed for user ${userId}:`, expoFallbackError);
+                }
               } else {
                 // Log other FCM errors for debugging
                 this.logger.error(`FCM error details:`, {
