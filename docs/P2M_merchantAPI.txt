@@ -1,0 +1,248 @@
+
+1LINK 1GO (RAAST P2M) – Merchant APIs
+API Name: P2M_Merchant
+Environment: Sandbox
+Purpose: Merchant profile management and merchant-side notifications
+
+1) Base URLs
+API Base URL
+https://sandboxapi.1link.net.pk/uat-1link/sandbox/1Link
+
+OAuth Token URL
+https://sandboxapi.1link.net.pk/uat-1link/sandbox/oauth2/token
+
+
+2) Credentials (Sandbox)
+Client ID / API Key (X-IBM-Client-Id)
+3fbc282ce1f63e22297a8e4ce10b6aca
+
+Client Secret
+dab7c9ebda0046ea07b0d8e705d56ff7
+
+Access Token
+AAIgM2ZiYzI4MmNlMWY2M2UyMjI5N2E4ZTRjZTEwYjZhY2FjAycxZSipYpAO51wthYl3jO2ppPxKEXbriCkRUa-U3JqCSJVeH1NY4cmmJYNrSNqWxfmAAYun5X27TbwdY_Arsb7mPwO_qtcqXq75mZVIG5FMhmIi_WI2cMuEOdcWAIY
+
+Security Notes
+Store client secret and token in env/vault
+Do not log or hardcode secrets
+Tokens must be cached and refreshed on expiry
+
+3) Authentication
+All requests require both mechanisms:
+Headers
+Content-Type: application/json
+X-IBM-Client-Id: <client_id>
+Authorization: Bearer <access_token>
+
+OAuth Details
+Flow: application
+Scope: 1LinkApi
+On HTTP 401 → refresh token and retry once
+
+4) Endpoints
+4.1 Create Merchant Profile
+POST
+/createMerchantProfile
+
+Full URL
+https://sandboxapi.1link.net.pk/uat-1link/sandbox/1Link/createMerchantProfile
+
+
+4.2 Update Merchant Profile
+POST
+/updateMerchantProfile
+
+Full URL
+https://sandboxapi.1link.net.pk/uat-1link/sandbox/1Link/updateMerchantProfile
+
+
+4.3 Get Merchant Profile
+GET
+/getMerchantProfile?merchantID=<merchantID>
+
+Full URL
+https://sandboxapi.1link.net.pk/uat-1link/sandbox/1Link/getMerchantProfile
+
+
+4.4 Notify Merchant (Transaction Status)
+POST
+/notifyMerchant
+
+
+4.5 Payment Notification (Instant Settlement Only)
+POST
+/paymentNotification
+
+
+4.6 Create Merchant Profile (Version 2)
+POST
+/createMerchantProfileVersion2
+
+
+5) Request Body Schemas
+5.1 Create Merchant Profile – Schema
+{
+  "type": "object",
+  "properties": {
+    "merchantDetails": {
+      "type": "object",
+      "required": [
+        "dbaName",
+        "merchantName",
+        "iban",
+        "bankBic",
+        "merchantCategoryCode",
+        "merchantID",
+        "accountTitle"
+      ],
+      "properties": {
+        "dbaName": { "type": "string", "maxLength": 140 },
+        "merchantName": { "type": "string", "maxLength": 140 },
+        "iban": { "type": "string", "maxLength": 24 },
+        "bankBic": { "type": "string", "maxLength": 6 },
+        "merchantCategoryCode": { "type": "string", "maxLength": 35 },
+        "merchantID": { "type": "string", "maxLength": 35 },
+        "accountTitle": { "type": "string", "maxLength": 140 },
+        "postalAddress": {
+          "type": "object",
+          "required": ["townName", "addressLine"],
+          "properties": {
+            "townName": { "type": "string", "maxLength": 35 },
+            "addressLine": { "type": "string", "maxLength": 70 }
+          }
+        },
+        "contactDetails": {
+          "type": "object",
+          "properties": {
+            "phoneNo": { "type": "string" },
+            "mobileNo": { "type": "string" },
+            "email": { "type": "string", "maxLength": 100 },
+            "dept": { "type": "string", "maxLength": 70 },
+            "website": { "type": "string", "maxLength": 128 }
+          }
+        },
+        "paymentDetails": {
+          "type": "object",
+          "required": ["feeType", "feeValue"],
+          "properties": {
+            "feeType": { "type": "string", "example": "F" },
+            "feeValue": { "type": "number", "example": 15 }
+          }
+        }
+      }
+    }
+  }
+}
+
+
+5.2 Update Merchant Profile – Schema (Key Fields)
+{
+  "type": "object",
+  "properties": {
+    "merchantDetails": {
+      "type": "object",
+      "required": [
+        "merchantStatus",
+        "dbaName",
+        "merchantName",
+        "iban",
+        "bankBic",
+        "merchantCategoryCode",
+        "merchantID",
+        "accountTitle"
+      ],
+      "properties": {
+        "merchantStatus": {
+          "type": "string",
+          "description": "00=Active, 01=Inactive, 02=Blocked"
+        },
+        "reasonCode": {
+          "type": "string",
+          "description": "Required when merchantStatus changes"
+        },
+        "merchantID": { "type": "string", "maxLength": 35 },
+        "iban": { "type": "string", "maxLength": 24 },
+        "bankBic": { "type": "string", "maxLength": 6 },
+        "merchantCategoryCode": { "type": "string", "maxLength": 35 },
+        "accountTitle": { "type": "string", "maxLength": 140 }
+      }
+    }
+  }
+}
+
+
+5.3 Notify Merchant – Schema
+{
+  "type": "object",
+  "properties": {
+    "info": {
+      "type": "object",
+      "properties": {
+        "rrn": { "type": "string", "maxLength": 12 },
+        "stan": { "type": "string", "maxLength": 6 },
+        "dateTime": { "type": "string" }
+      }
+    },
+    "messageInfo": {
+      "type": "object",
+      "properties": {
+        "merchantID": { "type": "string" },
+        "subDept": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    }
+  }
+}
+
+
+5.4 Payment Notification – Schema
+{
+  "type": "object",
+  "properties": {
+    "info": {
+      "type": "object",
+      "properties": {
+        "rrn": { "type": "string", "maxLength": 12 },
+        "stan": { "type": "string", "maxLength": 6 },
+        "dateTime": { "type": "string" }
+      }
+    },
+    "messageInfo": {
+      "type": "object",
+      "properties": {
+        "merchantID": { "type": "string" },
+        "subDept": { "type": "string" },
+        "status": { "type": "string" },
+        "orginalInstructedAmount": { "type": "string" },
+        "netAmount": { "type": "string" }
+      }
+    }
+  }
+}
+
+
+6) Response Schema (All APIs)
+{
+  "responseCode": "00",
+  "responseDescription": "Processed OK"
+}
+
+
+7) Backend Implementation Notes
+Implement token service with caching.
+Always send X-IBM-Client-Id and Authorization.
+Validate field lengths and patterns strictly.
+Store request/response for audit and reconciliation.
+Do not retry on validation errors.
+Payment notification endpoint is used only for instant settlement.
+
+8) Example Curl
+curl -X POST \
+  https://sandboxapi.1link.net.pk/uat-1link/sandbox/1Link/createMerchantProfile \
+  -H "Content-Type: application/json" \
+  -H "X-IBM-Client-Id: 3fbc282ce1f63e22297a8e4ce10b6aca" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -d '<REQUEST_JSON>'
+
+
+

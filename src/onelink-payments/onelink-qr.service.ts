@@ -31,9 +31,12 @@ export class OneLinkQrService {
     }
     
     // Generate unique IDs
+    // ReferenceID must be max 25 chars to fit in AdditionalData (99 char limit)
     const timestamp = Date.now();
-    const shortUserId = dto.userId.substring(0, 8).toUpperCase();
+    const shortUserId = dto.userId.substring(0, 6).toUpperCase(); // Reduced from 8 to 6
     const depositId = `DEP-${timestamp}-${this.generateRandomString(6)}`;
+    // Format: DEP-XXXXXX-TIMESTAMP (max 25 chars)
+    // Example: DEP-9F130E-176673702835 = 25 chars exactly
     const referenceId = this.truncateString(`DEP-${shortUserId}-${timestamp}`, 25); // Max 25 chars
     
     // Build QR request payload
@@ -75,12 +78,72 @@ export class OneLinkQrService {
       15
     );
     
-    // Format amount: clean numeric string (no zero-padding needed)
+    // Format amount: zero-padded to 12 digits (e.g., "000000345634")
     const formattedAmount = this.formatAmount(amountPkr);
     
-    return {
-      // "12" = Dynamic QR (with specific amount)
-      InitiationMethod: '12',
+    // Get optional convenience fee settings
+    const convenienceInd = this.configService.get<string>('ONELINK_CONVENIENCE_IND');
+    const convenienceFeeValue = this.configService.get<string>('ONELINK_CONVENIENCE_FEE_VALUE');
+    const convenienceFeePercentage = this.configService.get<string>('ONELINK_CONVENIENCE_FEE_PERCENTAGE');
+    const postalCode = this.configService.get<string>('ONELINK_POSTAL_CODE');
+    
+    // Build AdditionalData - MUST stay under 99 characters when encoded (EMV QR Tag 62 limit)
+    // When 1LINK encodes this to EMV format, each field adds overhead (tag + length)
+    // Priority: ReferenceID and Purpose are essential, others are optional
+    
+    // Truncate ReferenceID to max 25 chars (per 1LINK spec)
+    const truncatedReferenceId = this.truncateString(referenceId, 25);
+    const truncatedPurpose = this.truncateString(purpose || 'Wallet Top Up', 20); // Reduced to 20 for safety
+    
+    const additionalData: OneLinkQrRequest['AdditionalData'] = {
+      ReferenceID: truncatedReferenceId,
+      Purpose: truncatedPurpose,
+    };
+    
+    // Add optional AdditionalData fields conservatively
+    // EMV encoding adds ~6-10 chars overhead per field (tag + length + separators)
+    // Conservative estimate: keep total field values under ~70 chars to stay within 99 char limit
+    
+    const terminalId = this.configService.get<string>('ONELINK_TERMINAL_ID');
+    const billNumber = this.configService.get<string>('ONELINK_BILL_NUMBER');
+    const mobileNumber = this.configService.get<string>('ONELINK_MOBILE_NUMBER');
+    
+    // TerminalID is most important for transaction tracking
+    if (terminalId) {
+      additionalData.TerminalID = this.truncateString(terminalId, 8);
+    }
+    
+    // Add only 1-2 more short fields to stay within limit
+    // BillNumber is useful for invoice tracking
+    if (billNumber && billNumber.length <= 8) {
+      additionalData.BillNumber = billNumber;
+    } else if (mobileNumber && mobileNumber.length <= 11) {
+      // Or use MobileNumber if BillNumber not available
+      additionalData.MobileNumber = mobileNumber;
+    }
+    
+    // Skip other optional fields (StoreID, LoyaltyNumber, ConsumerID, AdditionalConsumerDataRequest)
+    // to ensure we stay well under the 99 character limit
+    // These can be added later if needed, but must be carefully validated
+    
+    // Build MerchantLanguageInfoTemplate if configured
+    let merchantLanguageInfo: OneLinkQrRequest['MerchantLanguageInfoTemplate'] | undefined;
+    const languagePreference = this.configService.get<string>('ONELINK_LANGUAGE_PREFERENCE');
+    const merchantNameAlt = this.configService.get<string>('ONELINK_MERCHANT_NAME_ALT');
+    const merchantCityAlt = this.configService.get<string>('ONELINK_MERCHANT_CITY_ALT');
+    const rfuForEMVCo = this.configService.get<string>('ONELINK_RFU_FOR_EMVCO');
+    
+    if (languagePreference || merchantNameAlt || merchantCityAlt || rfuForEMVCo) {
+      merchantLanguageInfo = {};
+      if (languagePreference) merchantLanguageInfo.LanguagePreference = languagePreference;
+      if (merchantNameAlt) merchantLanguageInfo.MerchantNameAlternateLanguage = merchantNameAlt;
+      if (merchantCityAlt) merchantLanguageInfo.MerchantCityAlternateLanguage = merchantCityAlt;
+      if (rfuForEMVCo) merchantLanguageInfo.RFUforEMVCo = rfuForEMVCo;
+    }
+    
+    const payload: OneLinkQrRequest = {
+      // "11" = Static QR (based on provided payload structure)
+      InitiationMethod: this.configService.get<string>('ONELINK_INITIATION_METHOD', '11'),
       
       MerchantAccountInformationPayee: {
         GloballyUniqueIdentifier: this.configService.get<string>('ONELINK_PAYEE_GUID', 'A000000736'),
@@ -107,11 +170,17 @@ export class OneLinkQrService {
       MerchantName: merchantName,
       MerchantCity: merchantCity,
       
-      AdditionalData: {
-        ReferenceID: referenceId,
-        Purpose: this.truncateString(purpose || 'Wallet Top Up', 25),
-      },
+      AdditionalData: additionalData,
     };
+    
+    // Add optional fields if configured
+    if (convenienceInd) payload.ConvenienceInd = convenienceInd;
+    if (convenienceFeeValue) payload.ConvenienceFeeValue = convenienceFeeValue;
+    if (convenienceFeePercentage) payload.ConvenienceFeePercentage = convenienceFeePercentage;
+    if (postalCode) payload.PostalCode = postalCode;
+    if (merchantLanguageInfo) payload.MerchantLanguageInfoTemplate = merchantLanguageInfo;
+    
+    return payload;
   }
   
   /**
@@ -146,15 +215,18 @@ export class OneLinkQrService {
   private async callQrApi(payload: OneLinkQrRequest): Promise<OneLinkQrResponse> {
     const accessToken = await this.oauthService.getAccessToken();
     const qrApiUrl = this.configService.get<string>('ONELINK_QR_API_URL');
-    const ibmClientId = this.configService.get<string>('ONELINK_IBM_CLIENT_ID');
+    // Use ONELINK_CLIENT_ID for X-IBM-Client-Id header (same as OAuth client ID)
+    const ibmClientId = this.configService.get<string>('ONELINK_CLIENT_ID') || 
+                       this.configService.get<string>('ONELINK_IBM_CLIENT_ID');
     
     if (!qrApiUrl || !ibmClientId) {
-      throw new InternalServerErrorException('1LINK API configuration missing');
+      throw new InternalServerErrorException('1LINK API configuration missing. Required: ONELINK_QR_API_URL, ONELINK_CLIENT_ID');
     }
     
     const fullUrl = `${qrApiUrl}/getQRCode`;
     
     this.logger.debug(`Calling 1LINK QR API: ${fullUrl}`);
+    this.logger.debug(`X-IBM-Client-Id: ${ibmClientId}`);
     this.logger.debug(`Payload: ${JSON.stringify(payload, null, 2)}`);
     
     try {
@@ -169,7 +241,7 @@ export class OneLinkQrService {
       });
       
       const responseText = await response.text();
-      this.logger.debug(`1LINK QR API response: ${response.status} - ${responseText}`);
+      this.logger.debug(`1LINK QR API response: ${response.status} - ${responseText.substring(0, 500)}`);
       
       if (!response.ok) {
         throw new Error(`1LINK API error: ${response.status} - ${responseText}`);
@@ -179,6 +251,7 @@ export class OneLinkQrService {
       return responseData;
     } catch (error) {
       if (error instanceof SyntaxError) {
+        this.logger.error(`Failed to parse 1LINK API response: ${error.message}`);
         throw new InternalServerErrorException('Invalid response from 1LINK API');
       }
       throw error;
@@ -187,18 +260,15 @@ export class OneLinkQrService {
   
   /**
    * Format amount according to 1LINK specs
-   * Clean numeric string, max 13 chars, max 2 decimals
+   * Zero-padded to 12 digits (e.g., "000000345634" for 3456.34)
+   * Amount is in smallest currency unit (paisa for PKR)
    */
-  private formatAmount(amount: number): string {
-    // Round to 2 decimal places
-    const rounded = Math.round(amount * 100) / 100;
+  private formatAmount(amountPkr: number): string {
+    // Convert PKR to paisa (smallest unit) - multiply by 100
+    const paisa = Math.round(amountPkr * 100);
     
-    // Convert to string without unnecessary decimals
-    if (Number.isInteger(rounded)) {
-      return rounded.toString();
-    }
-    
-    return rounded.toFixed(2);
+    // Zero-pad to 12 digits
+    return paisa.toString().padStart(12, '0');
   }
   
   /**
@@ -228,6 +298,108 @@ export class OneLinkQrService {
    */
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Debug method to verify QR payload structure and configuration
+   * This helps identify issues with account numbers, format, etc.
+   */
+  getDebugInfo(testAmount: number = 100): {
+    payload: OneLinkQrRequest;
+    environmentConfig: Record<string, string | undefined>;
+    validation: {
+      accountNumber: string;
+      accountNumberLength: number;
+      isIbanFormat: boolean;
+      hasIbanPrefix: boolean;
+      startsWithPK: boolean;
+      transactionAmount: string;
+      transactionAmountLength: number;
+      isAmount12Digits: boolean;
+      referenceId: string;
+      referenceIdLength: number;
+      issues: string[];
+    };
+    recommendations: string[];
+  } {
+    const testReferenceId = `DEP-TEST-${Date.now()}`.substring(0, 25);
+    const payload = this.buildQrPayload(testAmount, testReferenceId, 'Test Purpose');
+    
+    const accountNumber = this.configService.get<string>('ONELINK_PAYEE_ACCOUNT_NUMBER', 'IBAN220011194544555666');
+    const formattedAmount = this.formatAmount(testAmount);
+    
+    // Validation checks
+    const isIbanFormat = /^PK\d{2}[A-Z]{4}\d{16}$/.test(accountNumber);
+    const hasIbanPrefix = accountNumber.startsWith('IBAN');
+    const startsWithPK = accountNumber.startsWith('PK');
+    const isAmount12Digits = formattedAmount.length === 12;
+    
+    const issues: string[] = [];
+    const recommendations: string[] = [];
+    
+    // Check account number issues
+    if (hasIbanPrefix) {
+      issues.push('Account number has "IBAN" prefix - should be full IBAN starting with "PK"');
+      recommendations.push('Remove "IBAN" prefix from ONELINK_PAYEE_ACCOUNT_NUMBER. Use full IBAN format: PK36SCBL0000001123456702');
+    }
+    
+    if (!startsWithPK) {
+      issues.push('Account number does not start with "PK" - must be a valid Pakistani IBAN');
+      recommendations.push('Account number must be a valid Pakistani IBAN starting with "PK"');
+    }
+    
+    if (accountNumber.length !== 24) {
+      issues.push(`Account number length is ${accountNumber.length}, should be exactly 24 characters`);
+      recommendations.push('IBAN must be exactly 24 characters: PK + 2-digit check + 4-letter bank code + 16-digit account');
+    }
+    
+    if (!isIbanFormat) {
+      issues.push('Account number does not match Pakistani IBAN format');
+      recommendations.push('Format: PK + 2-digit check + 4-letter bank code + 16-digit account (e.g., PK36SCBL0000001123456702)');
+    }
+    
+    if (!isAmount12Digits) {
+      issues.push(`Transaction amount length is ${formattedAmount.length}, should be 12 digits`);
+    }
+    
+    // Check if account might not be registered
+    if (issues.length === 0) {
+      recommendations.push('Account number format looks correct. If banking apps show "invalid QR", ensure:');
+      recommendations.push('1. Account is registered with 1LINK');
+      recommendations.push('2. Account is enabled for 1QR payments');
+      recommendations.push('3. Bank IMD (ONELINK_PAYEE_BANK_IMD) matches your bank');
+    }
+    
+    return {
+      payload,
+      environmentConfig: {
+        payeeAccountNumber: this.configService.get<string>('ONELINK_PAYEE_ACCOUNT_NUMBER'),
+        payeeBankIMD: this.configService.get<string>('ONELINK_PAYEE_BANK_IMD'),
+        payeeGuid: this.configService.get<string>('ONELINK_PAYEE_GUID'),
+        productGuid: this.configService.get<string>('ONELINK_PRODUCT_GUID'),
+        productCode: this.configService.get<string>('ONELINK_PRODUCT_CODE'),
+        merchantName: this.configService.get<string>('ONELINK_MERCHANT_NAME'),
+        merchantCity: this.configService.get<string>('ONELINK_MERCHANT_CITY'),
+        mcc: this.configService.get<string>('ONELINK_MCC'),
+        initiationMethod: this.configService.get<string>('ONELINK_INITIATION_METHOD'),
+        clientId: this.configService.get<string>('ONELINK_CLIENT_ID') ? '***configured***' : undefined,
+        qrApiUrl: this.configService.get<string>('ONELINK_QR_API_URL'),
+      },
+      validation: {
+        accountNumber,
+        accountNumberLength: accountNumber.length,
+        isIbanFormat,
+        hasIbanPrefix,
+        startsWithPK,
+        transactionAmount: formattedAmount,
+        transactionAmountLength: formattedAmount.length,
+        isAmount12Digits,
+        referenceId: testReferenceId,
+        referenceIdLength: testReferenceId.length,
+        issues,
+      },
+      recommendations,
+    };
   }
 }
 

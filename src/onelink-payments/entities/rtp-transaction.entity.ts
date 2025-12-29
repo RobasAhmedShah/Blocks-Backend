@@ -49,7 +49,7 @@ export class RtpTransaction {
   operationType: RtpOperationType;
 
   @Column({ type: 'varchar', length: 100, nullable: true })
-  rtpId: string;
+  rtpId: string | null;
 
   @Column({ type: 'varchar', length: 6 })
   stan: string;
@@ -67,10 +67,10 @@ export class RtpTransaction {
   currency: string;
 
   @Column({ type: 'varchar', length: 24, nullable: true })
-  payerIban: string;
+  payerIban: string | null;
 
   @Column({ type: 'varchar', length: 140, nullable: true })
-  payerTitle: string;
+  payerTitle: string | null;
 
   @Column({ type: 'varchar', length: 30, nullable: true })
   payerMobile: string;

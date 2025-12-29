@@ -1,0 +1,234 @@
+
+
+1LINK 1GO (RAAST P2M) – P2M_QR API
+Environment: Sandbox
+Purpose: Generate Dynamic QR for P2M payments
+
+1) Base URLs
+API Base URL
+https://sandboxapi.1link.net.pk/uat-1link/sandbox/1Link
+
+OAuth Token URL
+https://sandboxapi.1link.net.pk/uat-1link/sandbox/oauth2/token
+
+
+2) Credentials (Sandbox)
+Client ID (API Key)
+3fbc282ce1f63e22297a8e4ce10b6aca
+
+Client Secret
+dab7c9ebda0046ea07b0d8e705d56ff7
+
+Access Token
+AAIgM2ZiYzI4MmNlMWY2M2UyMjI5N2E4ZTRjZTEwYjZhY2FjAycxZSipYpAO51wthYl3jO2ppPxKEXbriCkRUa-U3JqCSJVeH1NY4cmmJYNrSNqWxfmAAYun5X27TbwdY_Arsb7mPwO_qtcqXq75mZVIG5FMhmIi_WI2cMuEOdcWAIY
+
+Security
+Store client secret and token in env/vault
+Do not log or commit secrets
+
+3) Authentication
+Every request must include both:
+Headers
+Content-Type: application/json
+X-IBM-Client-Id: <client_id>
+Authorization: Bearer <access_token>
+
+OAuth Flow
+Application (client credentials)
+Scope: 1LinkApi
+Token caching required
+On HTTP 401 → refresh token and retry once
+
+4) Endpoints
+A) Generate Dynamic QR – Merchant
+POST
+/generateDQRCMerchant
+
+Full URL
+https://sandboxapi.1link.net.pk/uat-1link/sandbox/1Link/generateDQRCMerchant
+
+
+B) Generate Dynamic QR – Aggregator
+POST
+/generateDQRCAggregator
+
+Full URL
+https://sandboxapi.1link.net.pk/uat-1link/sandbox/1Link/generateDQRCAggregator
+
+
+5) Request Body Schemas
+5.1 Merchant Request Body Schema
+{
+  "type": "object",
+  "properties": {
+    "merchantDetails": {
+      "type": "object",
+      "properties": {
+        "dbaName": { "type": "string", "maxLength": 140 },
+        "merchantName": { "type": "string", "maxLength": 140 },
+        "iban": { "type": "string", "maxLength": 24 },
+        "bankBic": { "type": "string", "maxLength": 6 },
+        "merchantCategoryCode": { "type": "string", "maxLength": 35 },
+        "merchantID": { "type": "string", "maxLength": 35 },
+        "postalAddress": {
+          "type": "object",
+          "properties": {
+            "townName": { "type": "string", "maxLength": 35 },
+            "addressLine": { "type": "string", "maxLength": 70 },
+            "subDept": { "type": "string", "maxLength": 8 }
+          },
+          "required": ["townName", "addressLine", "subDept"]
+        },
+        "contactDetails": {
+          "type": "object",
+          "properties": {
+            "phoneNo": { "type": "string" },
+            "mobileNo": { "type": "string" },
+            "email": { "type": "string", "maxLength": 100 },
+            "dept": { "type": "string", "maxLength": 70 },
+            "website": { "type": "string", "maxLength": 128 },
+            "merchantChannelId": { "type": "string", "maxLength": 35 }
+          }
+        },
+        "geoLocation": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "string", "maxLength": 128 },
+            "long": { "type": "string", "maxLength": 128 }
+          }
+        }
+      },
+      "required": [
+        "dbaName",
+        "merchantName",
+        "iban",
+        "bankBic",
+        "merchantCategoryCode",
+        "merchantID"
+      ]
+    },
+    "payerDetails": {
+      "type": "object",
+      "properties": {
+        "additionalRequiredDetails": { "type": "string", "maxLength": 3 },
+        "identificationDetails": {
+          "type": "object",
+          "properties": {
+            "loyaltyNo": { "type": "string", "maxLength": 35 },
+            "customerLabel": { "type": "string", "maxLength": 35 }
+          }
+        }
+      }
+    },
+    "paymentDetails": {
+      "type": "object",
+      "properties": {
+        "executionDateTime": { "type": "string", "maxLength": 20 },
+        "expiryDateTime": { "type": "string", "maxLength": 20 },
+        "instructedAmount": { "type": "integer" },
+        "transactionType": { "type": "string" }
+      },
+      "required": ["expiryDateTime", "instructedAmount", "transactionType"]
+    },
+    "info": {
+      "type": "object",
+      "properties": {
+        "stan": { "type": "string", "maxLength": 6 },
+        "rrn": { "type": "string", "maxLength": 12 }
+      },
+      "required": ["stan", "rrn"]
+    }
+  }
+}
+
+
+5.2 Aggregator Request Body Schema
+{
+  "type": "object",
+  "properties": {
+    "merchantDetails": {
+      "type": "object",
+      "properties": {
+        "merchantID": { "type": "string", "maxLength": 35 },
+        "subDept": {
+          "type": "string",
+          "maxLength": 70,
+          "description": "Terminal ID. If not available, use \"0001\"."
+        }
+      },
+      "required": ["merchantID", "subDept"]
+    },
+    "contactDetails": {
+      "type": "object",
+      "properties": {
+        "merchantChannelId": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "geoLocation": {
+      "type": "object",
+      "properties": {
+        "lat": { "type": "string", "maxLength": 128 },
+        "long": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "payerDetails": {
+      "type": "object",
+      "properties": {
+        "additionalRequiredDetails": { "type": "string", "maxLength": 3 },
+        "identificationDetails": {
+          "type": "object",
+          "properties": {
+            "loyaltyNo": { "type": "string", "maxLength": 35 },
+            "customerLabel": { "type": "string", "maxLength": 35 }
+          }
+        },
+        "paymentDetails": {
+          "type": "object",
+          "properties": {
+            "executionDateTime": { "type": "string", "maxLength": 20 },
+            "expiryDateTime": { "type": "string", "maxLength": 20 },
+            "instructedAmount": { "example": "310" },
+            "transactionType": { "type": "string" }
+          },
+          "required": ["expiryDateTime", "instructedAmount", "transactionType"]
+        },
+        "info": {
+          "type": "object",
+          "properties": {
+            "stan": { "type": "string", "maxLength": 6 },
+            "rrn": { "type": "string", "maxLength": 12 }
+          },
+          "required": ["stan", "rrn"]
+        }
+      }
+    }
+  }
+}
+
+
+6) Response Schema
+{
+  "responseCode": "00",
+  "responseDescription": "Processed OK"
+}
+
+Note: OpenAPI does not expose the QR payload. Backend must capture a real sandbox response and extend parsing/storage accordingly.
+
+7) Backend Implementation Notes
+Build token service with caching.
+Always send X-IBM-Client-Id + Authorization.
+Generate stan (≤6) and rrn (12 digits, unique).
+Validate expiry is future and within allowed window.
+Store full request and response for reconciliation.
+Do not retry on validation or duplicate RRN errors.
+
+8) Test Curl (Example)
+curl -X POST \
+  https://sandboxapi.1link.net.pk/uat-1link/sandbox/1Link/generateDQRCMerchant \
+  -H "Content-Type: application/json" \
+  -H "X-IBM-Client-Id: 3fbc282ce1f63e22297a8e4ce10b6aca" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -d '<REQUEST_JSON>'
+
+
+

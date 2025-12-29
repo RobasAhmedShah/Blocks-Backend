@@ -60,14 +60,17 @@ POST /api/payments/1link/1qr
 Add the following environment variables to your `.env` file:
 
 ```env
-# 1LINK Sandbox Credentials
+# ============================================
+# 1LINK OAuth & API Configuration (Required)
+# ============================================
 ONELINK_CLIENT_ID=3fbc282ce1f63e22297a8e4ce10b6aca
 ONELINK_CLIENT_SECRET=dab7c9ebda0046ea07b0d8e705d56ff7
 ONELINK_OAUTH_URL=https://sbapi.1link.net.pk/uat-1link/sandbox/oauth2/token
 ONELINK_QR_API_URL=https://sandboxapi.1link.net.pk/uat-1link/sandbox/qr-rest-service
-ONELINK_IBM_CLIENT_ID=3fbc282ce1f63e22297a8e4ce10b6aca
 
-# Merchant Configuration
+# ============================================
+# Merchant Configuration (Required)
+# ============================================
 ONELINK_MERCHANT_NAME=Blocks
 ONELINK_MERCHANT_CITY=Karachi
 ONELINK_MCC=0010
@@ -76,17 +79,51 @@ ONELINK_PAYEE_BANK_IMD=435345
 ONELINK_PAYEE_ACCOUNT_NUMBER=IBAN220011194544555666
 ONELINK_PRODUCT_GUID=A00000736
 ONELINK_PRODUCT_CODE=000081
+
+# ============================================
+# QR Code Configuration (Optional)
+# ============================================
+# InitiationMethod: "11" for static QR, "12" for dynamic QR
+ONELINK_INITIATION_METHOD=11
+
+# Postal Code (optional)
+ONELINK_POSTAL_CODE=T8S3I1
+
+# Convenience Fee Settings (optional)
+ONELINK_CONVENIENCE_IND=44
+ONELINK_CONVENIENCE_FEE_VALUE=44
+ONELINK_CONVENIENCE_FEE_PERCENTAGE=44
+
+# ============================================
+# Additional Data Fields (Optional)
+# ============================================
+ONELINK_BILL_NUMBER=65422222
+ONELINK_MOBILE_NUMBER=03242345678
+ONELINK_STORE_ID=543534
+ONELINK_LOYALTY_NUMBER=534533
+ONELINK_CONSUMER_ID=987654
+ONELINK_TERMINAL_ID=321654
+ONELINK_ADDITIONAL_CONSUMER_DATA_REQUEST=Any
+
+# ============================================
+# Merchant Language Info (Optional)
+# ============================================
+ONELINK_LANGUAGE_PREFERENCE=Eng
+ONELINK_MERCHANT_NAME_ALT=Eng
+ONELINK_MERCHANT_CITY_ALT=Eng
+ONELINK_RFU_FOR_EMVCO=4567888
 ```
 
 ### Variable Descriptions
 
+#### Required Variables
+
 | Variable | Description | Constraint |
 |----------|-------------|------------|
-| `ONELINK_CLIENT_ID` | OAuth2 Client ID | Required |
+| `ONELINK_CLIENT_ID` | OAuth2 Client ID (also used for X-IBM-Client-Id header) | Required |
 | `ONELINK_CLIENT_SECRET` | OAuth2 Client Secret | Required |
 | `ONELINK_OAUTH_URL` | OAuth2 Token Endpoint | Required |
 | `ONELINK_QR_API_URL` | QR Generation API Base URL | Required |
-| `ONELINK_IBM_CLIENT_ID` | X-IBM-Client-Id header value | Required |
 | `ONELINK_MERCHANT_NAME` | Merchant name in QR | Max 25 chars |
 | `ONELINK_MERCHANT_CITY` | Merchant city in QR | Max 15 chars |
 | `ONELINK_MCC` | Merchant Category Code | Exactly 4 digits |
@@ -95,6 +132,27 @@ ONELINK_PRODUCT_CODE=000081
 | `ONELINK_PAYEE_ACCOUNT_NUMBER` | Payee IBAN/Account | Max 24 chars |
 | `ONELINK_PRODUCT_GUID` | Product Globally Unique ID | 1-32 chars |
 | `ONELINK_PRODUCT_CODE` | Product Code | Max 44 chars |
+
+#### Optional Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ONELINK_INITIATION_METHOD` | QR initiation method ("11" = static, "12" = dynamic) | "11" |
+| `ONELINK_POSTAL_CODE` | Merchant postal code | - |
+| `ONELINK_CONVENIENCE_IND` | Convenience indicator | - |
+| `ONELINK_CONVENIENCE_FEE_VALUE` | Convenience fee value | - |
+| `ONELINK_CONVENIENCE_FEE_PERCENTAGE` | Convenience fee percentage | - |
+| `ONELINK_BILL_NUMBER` | Bill number for transaction | - |
+| `ONELINK_MOBILE_NUMBER` | Merchant mobile number | - |
+| `ONELINK_STORE_ID` | Store identifier | - |
+| `ONELINK_LOYALTY_NUMBER` | Loyalty program number | - |
+| `ONELINK_CONSUMER_ID` | Consumer identifier | - |
+| `ONELINK_TERMINAL_ID` | Terminal identifier | - |
+| `ONELINK_ADDITIONAL_CONSUMER_DATA_REQUEST` | Additional consumer data | - |
+| `ONELINK_LANGUAGE_PREFERENCE` | Language preference (e.g., "Eng") | - |
+| `ONELINK_MERCHANT_NAME_ALT` | Merchant name in alternate language | - |
+| `ONELINK_MERCHANT_CITY_ALT` | Merchant city in alternate language | - |
+| `ONELINK_RFU_FOR_EMVCO` | Reserved for future use (EMVCo) | - |
 
 ## OAuth Token Caching
 

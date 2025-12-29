@@ -74,8 +74,8 @@ export class OneLinkRtpService {
       rtpTxn.responseCode = response.responseCode;
       rtpTxn.responseDescription = response.responseDescription;
       rtpTxn.responsePayload = response as unknown as Record<string, unknown>;
-      rtpTxn.rtpId = response.rtpId;
-      rtpTxn.payerTitle = response.title;
+      rtpTxn.rtpId = response.rtpId ?? null;
+      rtpTxn.payerTitle = response.title ?? null;
       rtpTxn.status = response.responseCode === '00' ? 'COMPLETED' : 'FAILED';
       await this.rtpRepo.save(rtpTxn);
       
@@ -132,9 +132,9 @@ export class OneLinkRtpService {
       rtpTxn.responseCode = response.responseCode;
       rtpTxn.responseDescription = response.responseDescription;
       rtpTxn.responsePayload = response as unknown as Record<string, unknown>;
-      rtpTxn.rtpId = response.rtpId;
-      rtpTxn.payerTitle = response.title;
-      rtpTxn.payerIban = response.iban;
+      rtpTxn.rtpId = response.rtpId ?? null;
+      rtpTxn.payerTitle = response.title ?? null;
+      rtpTxn.payerIban = response.iban ?? null;
       rtpTxn.status = response.responseCode === '00' ? 'COMPLETED' : 'FAILED';
       await this.rtpRepo.save(rtpTxn);
       

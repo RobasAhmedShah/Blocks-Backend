@@ -44,12 +44,29 @@ export interface OneLinkQrRequest {
   MCC: string;
   CurrencyCode: string;
   TransactionAmount: string;
+  ConvenienceInd?: string;
+  ConvenienceFeeValue?: string;
+  ConvenienceFeePercentage?: string;
   CountryCode: string;
   MerchantName: string;
   MerchantCity: string;
+  PostalCode?: string;
   AdditionalData: {
+    BillNumber?: string;
+    MobileNumber?: string;
+    StoreID?: string;
+    LoyaltyNumber?: string;
     ReferenceID: string;
+    ConsumerID?: string;
+    TerminalID?: string;
     Purpose: string;
+    AdditionalConsumerDataRequest?: string;
+  };
+  MerchantLanguageInfoTemplate?: {
+    LanguagePreference?: string;
+    MerchantNameAlternateLanguage?: string;
+    MerchantCityAlternateLanguage?: string;
+    RFUforEMVCo?: string;
   };
 }
 
