@@ -11,6 +11,7 @@ The backend logs appear in the **terminal/console** where you started the backen
 If you're running the backend with:
 ```bash
 npm run start:dev
+
 ```
 
 The logs will appear in **that same terminal window**.
