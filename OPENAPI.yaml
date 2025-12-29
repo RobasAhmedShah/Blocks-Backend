@@ -31,6 +31,8 @@ tags:
     description: Comprehensive dashboard statistics and growth analytics with dynamic filtering.
   - name: Certificates (Mobile)
     description: PDF certificate generation and retrieval for mobile app.
+  - name: Earnings (Mobile)
+    description: User earnings and rewards from property investments (rental income, ROI).
   - name: Notifications
     description: Push notification management for users, organization admins, and Blocks admin.
   - name: Organization Admin Auth
@@ -2824,6 +2826,80 @@ paths:
                     example: portfolio/user_id/property_id.pdf
         '404':
           description: Property not found or no investments found for this property.
+
+  # ----------------------------------------------
+  # Earnings (Mobile)
+  # ----------------------------------------------
+  /api/mobile/earnings:
+    get:
+      tags:
+        - Earnings (Mobile)
+      summary: Get user earnings
+      description: Returns all distributed rewards/earnings (rental income, ROI) for a user from all their property investments. Supports userId as UUID or displayCode.
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: User ID (UUID or displayCode like USR-000001)
+      responses:
+        '200':
+          description: User earnings data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalEarnings:
+                    type: string
+                    format: decimal
+                    example: '1250.500000'
+                    description: Total sum of all earnings in USDT
+                  earnings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          example: '123e4567-e89b-12d3-a456-426614174000'
+                        displayCode:
+                          type: string
+                          example: 'RWD-000001'
+                        amount:
+                          type: string
+                          format: decimal
+                          example: '250.000000'
+                          description: Earnings amount in USDT
+                        propertyId:
+                          type: string
+                          format: uuid
+                          nullable: true
+                          example: '123e4567-e89b-12d3-a456-426614174001'
+                        propertyTitle:
+                          type: string
+                          nullable: true
+                          example: 'Luxury Apartment Complex'
+                        propertyDisplayCode:
+                          type: string
+                          nullable: true
+                          example: 'PRP-000001'
+                        description:
+                          type: string
+                          nullable: true
+                          example: 'ROI distribution for property Luxury Apartment Complex'
+                        createdAt:
+                          type: string
+                          format: date-time
+                          example: '2025-01-12T10:00:00Z'
+                  count:
+                    type: integer
+                    example: 5
+                    description: Total number of earnings records
+        '404':
+          description: User not found
 
 # ----------------------------------------------
 # Reusable Components
