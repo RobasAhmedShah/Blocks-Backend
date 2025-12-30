@@ -1,4 +1,4 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Logger } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Logger, Req } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
 import { GmailService } from './gmail.service';
 import { PubSubMessageDto } from './dto/pubsub-message.dto';
@@ -12,9 +12,37 @@ export class GmailController {
   @Post('gmail')
   @Public() // Public endpoint - no authentication required for Pub/Sub webhooks
   @HttpCode(HttpStatus.OK)
-  async handleGmailWebhook(@Body() body: PubSubMessageDto) {
+  async handleGmailWebhook(@Req() request: any) {
     // Enhanced logging to debug webhook issues
     console.log('📩 ========== GMAIL WEBHOOK HIT ==========');
+    
+    // Get body - handle both parsed and raw cases
+    // Pub/Sub may not send Content-Type header, so Fastify might not parse it
+    let body: PubSubMessageDto;
+    
+    try {
+      if (request.body && typeof request.body === 'object' && !Buffer.isBuffer(request.body)) {
+        // Body already parsed by Fastify
+        body = request.body as PubSubMessageDto;
+      } else {
+        // Try to parse if it's a string or buffer
+        const bodyStr = typeof request.body === 'string' 
+          ? request.body 
+          : request.body?.toString() || JSON.stringify(request.body || {});
+        body = JSON.parse(bodyStr);
+      }
+    } catch (error) {
+      this.logger.error('❌ Error parsing request body:', error);
+      this.logger.error('❌ Request body type:', typeof request.body);
+      this.logger.error('❌ Request body:', request.body);
+      // Return 200 anyway to prevent Pub/Sub retries
+      return {
+        success: false,
+        message: 'Error parsing request body',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+
     console.log('📩 Gmail Push Received:', JSON.stringify(body, null, 2));
     this.logger.log('📩 ========== GMAIL WEBHOOK HIT ==========');
     this.logger.log('📩 Gmail Push Received (raw):', JSON.stringify(body, null, 2));

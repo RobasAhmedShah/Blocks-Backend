@@ -38,6 +38,26 @@ async function createNestApp(): Promise<NestFastifyApplication> {
     },
   });
 
+  // Configure Fastify to accept requests without Content-Type for Pub/Sub webhooks
+  // Pub/Sub sometimes doesn't send Content-Type header, which causes 415 errors
+  // We add a catch-all parser that handles requests without Content-Type
+  // This must be added BEFORE NestJS creates the app, so it doesn't conflict
+  fastifyInstance.addContentTypeParser('*', { parseAs: 'string' }, (req, body, done) => {
+    // Only try to parse as JSON if body looks like JSON
+    if (typeof body === 'string' && body.trim() && (body.trim().startsWith('{') || body.trim().startsWith('['))) {
+      try {
+        const json = JSON.parse(body);
+        done(null, json);
+      } catch (err) {
+        // If parsing fails, return as-is (let other parsers handle it)
+        done(null, body);
+      }
+    } else {
+      // Not JSON, return as-is
+      done(null, body);
+    }
+  });
+
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(fastifyInstance),
