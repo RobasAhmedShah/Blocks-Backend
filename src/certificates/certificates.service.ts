@@ -844,7 +844,7 @@ export class CertificatesService {
         tokenPrice: property.pricePerTokenUSDT?.toString() || '0',
         totalAmount: totalInvestedAmount.toString(), // Total invested amount
         averagePrice: averagePrice.toFixed(2),
-        expectedROI: property.expectedROI?.toString() || '0',
+        // expectedROI removed - not shown on ownership certificate
         authorityName: 'A. B. Registrar',
         designation: 'Registrar of Deeds',
         serial: `CERT-OWN-${userId.substring(0, 8)}-${propertyId.substring(0, 8)}-${Date.now()}`,
@@ -862,9 +862,9 @@ export class CertificatesService {
       const pdfBuffer = await this.pdfService.generateCertificate(certificateData);
       this.logger.log(`[CertificatesService] 📦 PDF generated (${pdfBuffer.length} bytes)`);
 
-      // Upload to Supabase
-      const filePath = `ownership/${userId}/${propertyId}/${Date.now()}.pdf`;
-      this.logger.log(`[CertificatesService] ☁️ Uploading to Supabase: ${filePath}`);
+      // Upload to Supabase - fixed path per user+property (overwrites existing certificate)
+      const filePath = `ownership/${userId}/${propertyId}.pdf`;
+      this.logger.log(`[CertificatesService] ☁️ Uploading to Supabase (overwriting existing): ${filePath}`);
       
       const { path: uploadedPath } = await this.supabaseService.uploadCertificate(
         filePath,
@@ -875,54 +875,41 @@ export class CertificatesService {
       const fullPublicUrl = this.supabaseService.getCertificatePublicUrl(uploadedPath);
       this.logger.log(`[CertificatesService] 🔗 Full public URL: ${fullPublicUrl}`);
 
-      // Update investment certificate path (void old one, set new one)
-      // Find the investment to update (use provided ID or find most recent)
-      let investmentToUpdate: Investment | null = null;
-      
-      if (investmentId) {
-        investmentToUpdate = await this.investmentRepo.findOne({
-          where: { id: investmentId },
-        });
-      }
-      
-      if (!investmentToUpdate) {
-        // Find the most recent confirmed investment for this user/property
-        investmentToUpdate = await this.investmentRepo.findOne({
+      // Update ALL investments for this user+property to point to the same certificate
+      // This ensures all investments show the same certificate (one certificate per user+property)
+      const updateResult = await this.investmentRepo.update(
+        {
+          userId,
+          propertyId,
+          status: 'confirmed',
+        },
+        { certificatePath: fullPublicUrl }
+      );
+
+      this.logger.log(
+        `[CertificatesService] ✅ Updated ${updateResult.affected || 0} investment(s) with certificate path: ${fullPublicUrl}`,
+      );
+
+      // Verify at least one investment was updated
+      if (updateResult.affected === 0) {
+        this.logger.warn(
+          `[CertificatesService] ⚠️ Warning: No investments found to update certificate path for user ${userId}, property ${propertyId}`,
+        );
+      } else {
+        // Verify the update worked by checking one investment
+        const sampleInvestment = await this.investmentRepo.findOne({
           where: {
             userId,
             propertyId,
             status: 'confirmed',
           },
-          order: { updatedAt: 'DESC' },
-        });
-      }
-
-      if (investmentToUpdate) {
-        // Void old certificate by clearing it, then set new one
-        // (In future, we could track certificate history in a separate table)
-        await this.investmentRepo.update(
-          { id: investmentToUpdate.id },
-          { certificatePath: fullPublicUrl }
-        );
-
-        // Verify it was saved
-        const updatedInvestment = await this.investmentRepo.findOne({
-          where: { id: investmentToUpdate.id },
         });
 
-        if (updatedInvestment?.certificatePath === fullPublicUrl) {
+        if (sampleInvestment?.certificatePath === fullPublicUrl) {
           this.logger.log(
-            `[CertificatesService] ✅ Verified: Ownership certificate saved to investment ${updatedInvestment.displayCode} (${updatedInvestment.id}): ${fullPublicUrl}`,
-          );
-        } else {
-          this.logger.warn(
-            `[CertificatesService] ⚠️ Warning: Certificate path NOT saved to investment ${updatedInvestment?.displayCode || investmentId}`,
+            `[CertificatesService] ✅ Verified: Certificate path saved to investments for user ${userId}, property ${propertyId}`,
           );
         }
-      } else {
-        this.logger.warn(
-          `[CertificatesService] ⚠️ Could not find investment to update certificate path for user ${userId}, property ${propertyId}`,
-        );
       }
 
       // Generate signed URL
