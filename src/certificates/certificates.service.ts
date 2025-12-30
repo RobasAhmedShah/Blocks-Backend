@@ -844,7 +844,7 @@ export class CertificatesService {
         tokenPrice: property.pricePerTokenUSDT?.toString() || '0',
         totalAmount: totalInvestedAmount.toString(), // Total invested amount
         averagePrice: averagePrice.toFixed(2),
-        // expectedROI removed - not shown on ownership certificate
+        expectedROI: property.expectedROI?.toString() || '0', // Required by interface, even if not displayed
         authorityName: 'A. B. Registrar',
         designation: 'Registrar of Deeds',
         serial: `CERT-OWN-${userId.substring(0, 8)}-${propertyId.substring(0, 8)}-${Date.now()}`,
