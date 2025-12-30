@@ -13,26 +13,37 @@ export class GmailController {
   @Public() // Public endpoint - no authentication required for Pub/Sub webhooks
   @HttpCode(HttpStatus.OK)
   async handleGmailWebhook(@Body() body: PubSubMessageDto) {
-    // TEMPORARY: Log raw payload to confirm endpoint is being hit
+    // Enhanced logging to debug webhook issues
+    console.log('📩 ========== GMAIL WEBHOOK HIT ==========');
     console.log('📩 Gmail Push Received:', JSON.stringify(body, null, 2));
-    this.logger.log('📩 Gmail Push Received (raw):', body);
+    this.logger.log('📩 ========== GMAIL WEBHOOK HIT ==========');
+    this.logger.log('📩 Gmail Push Received (raw):', JSON.stringify(body, null, 2));
+    this.logger.log('📩 Body type:', typeof body);
+    this.logger.log('📩 Has message?', !!body.message);
+    this.logger.log('📩 Has message.data?', !!body.message?.data);
+    this.logger.log('📩 Subscription:', body.subscription);
 
     try {
       // Process the Pub/Sub message
+      this.logger.log('📩 Starting to process Pub/Sub message...');
       const gmailEvent = await this.gmailService.processPubSubMessage(body);
+      this.logger.log('📩 Processing completed. Result:', gmailEvent ? 'SUCCESS' : 'FAILED');
 
       // Always return 200 to acknowledge receipt (even if processing failed)
       // This prevents Pub/Sub from retrying the message
       return {
         success: true,
         message: gmailEvent ? 'Gmail event processed successfully' : 'Message received but processing failed',
+        received: true,
       };
     } catch (error) {
       // Log error but still return 200 to prevent Pub/Sub retries
-      this.logger.error('Error handling Gmail webhook:', error);
+      this.logger.error('❌ Error handling Gmail webhook:', error);
+      this.logger.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
       return {
         success: false,
         message: 'Error processing webhook, but message acknowledged',
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }

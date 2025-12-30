@@ -173,19 +173,33 @@ export class GmailService {
    */
   async processPubSubMessage(pubSubMessage: PubSubMessageDto): Promise<GmailEventDto | null> {
     try {
-      this.logger.debug('Processing Pub/Sub message:', JSON.stringify(pubSubMessage, null, 2));
+      this.logger.log('🔍 ========== PROCESSING PUB/SUB MESSAGE ==========');
+      this.logger.log('🔍 Raw Pub/Sub message:', JSON.stringify(pubSubMessage, null, 2));
 
-      if (!pubSubMessage.message?.data) {
-        this.logger.warn('Pub/Sub message missing data field');
+      if (!pubSubMessage.message) {
+        this.logger.error('❌ Pub/Sub message missing message field');
+        this.logger.error('❌ Full body:', JSON.stringify(pubSubMessage, null, 2));
         return null;
       }
 
+      if (!pubSubMessage.message.data) {
+        this.logger.error('❌ Pub/Sub message missing data field');
+        this.logger.error('❌ Message object:', JSON.stringify(pubSubMessage.message, null, 2));
+        return null;
+      }
+
+      this.logger.log('🔍 Decoding base64 data...');
       // Decode base64 to string
       const decodedData = Buffer.from(pubSubMessage.message.data, 'base64').toString('utf-8');
+      this.logger.log('🔍 Decoded data:', decodedData);
+      
       const gmailEvent: GmailEventDto = JSON.parse(decodedData);
+      this.logger.log('🔍 Parsed Gmail event:', JSON.stringify(gmailEvent, null, 2));
 
       if (!gmailEvent.emailAddress || !gmailEvent.historyId) {
-        this.logger.warn('Gmail event missing required fields');
+        this.logger.error('❌ Gmail event missing required fields');
+        this.logger.error('❌ emailAddress:', gmailEvent.emailAddress);
+        this.logger.error('❌ historyId:', gmailEvent.historyId);
         return null;
       }
 
@@ -195,11 +209,14 @@ export class GmailService {
       });
 
       // Process the Gmail event (fetch history, parse emails, credit wallets)
+      this.logger.log('🔍 Starting to process Gmail event...');
       await this.processGmailEvent(gmailEvent);
+      this.logger.log('✅ Gmail event processing completed');
 
       return gmailEvent;
     } catch (error) {
-      this.logger.error('Error processing Pub/Sub message:', error);
+      this.logger.error('❌ Error processing Pub/Sub message:', error);
+      this.logger.error('❌ Error details:', error instanceof Error ? error.stack : 'No stack trace');
       return null;
     }
   }
@@ -326,17 +343,32 @@ export class GmailService {
       let sync = await this.gmailSyncRepo.findOne({ where: { emailAddress: event.emailAddress } });
       const lastHistoryId = sync?.lastHistoryId || '0';
 
-      this.logger.log(`Fetching Gmail history from ${lastHistoryId} to ${event.historyId}`);
+      this.logger.log(`🔍 Fetching Gmail history from ${lastHistoryId} to ${event.historyId}`);
 
       // Fetch Gmail history
-      const historyResponse = await this.gmail.users.history.list({
-        userId: 'me',
-        startHistoryId: lastHistoryId,
-        historyTypes: ['messageAdded'],
-      });
+      let historyResponse;
+      try {
+        historyResponse = await this.gmail.users.history.list({
+          userId: 'me',
+          startHistoryId: lastHistoryId,
+          historyTypes: ['messageAdded'],
+        });
+      } catch (error: any) {
+        // If historyId is too old or invalid, try without startHistoryId
+        if (error.code === 404 || error.message?.includes('not found')) {
+          this.logger.warn(`⚠️  History API failed with startHistoryId ${lastHistoryId}, trying without it`);
+          historyResponse = await this.gmail.users.history.list({
+            userId: 'me',
+            historyTypes: ['messageAdded'],
+            maxResults: 10, // Limit to recent 10 messages
+          });
+        } else {
+          throw error;
+        }
+      }
 
       const history = historyResponse.data.history || [];
-      this.logger.log(`Found ${history.length} history entries`);
+      this.logger.log(`📋 Found ${history.length} history entries`);
 
       // Collect all new message IDs
       const messageIds: string[] = [];
@@ -350,7 +382,7 @@ export class GmailService {
         }
       }
 
-      this.logger.log(`Found ${messageIds.length} new messages`);
+      this.logger.log(`📨 Found ${messageIds.length} new message(s) to process`);
 
       // Process each message
       for (const messageId of messageIds) {
@@ -409,12 +441,16 @@ export class GmailService {
 
       // Parse email body
       const body = this.extractEmailBody(message.payload);
-      this.logger.debug(`Email body extracted (${body.length} chars)`);
+      this.logger.log(`📄 Email body extracted (${body.length} chars)`);
+      this.logger.log(`📄 Email body content (first 500 chars): ${body.substring(0, 500)}`);
 
       // Parse transaction details
       const transaction = this.parseTransaction(body, subject, from);
       if (!transaction) {
-        this.logger.warn('Failed to parse transaction from email');
+        this.logger.warn('❌ Failed to parse transaction from email');
+        this.logger.warn(`   Subject: ${subject}`);
+        this.logger.warn(`   From: ${from}`);
+        this.logger.warn(`   Body preview: ${body.substring(0, 200)}`);
         return;
       }
 
@@ -426,10 +462,21 @@ export class GmailService {
         this.logger.log(`⚠️  Processing debit transaction (filter disabled for testing)`);
       }
 
-      this.logger.log(`💰 Transaction parsed: PKR ${transaction.amount}, Account: ***${transaction.accountLast4}`);
+      this.logger.log(`💰 Transaction parsed successfully:`);
+      this.logger.log(`   Amount: PKR ${transaction.amount}`);
+      this.logger.log(`   Account Last 4: ***${transaction.accountLast4}`);
+      this.logger.log(`   Transaction Ref: ${transaction.transactionRef}`);
+      this.logger.log(`   Is Credit: ${transaction.isCredit}`);
+      this.logger.log(`   Email From: ${transaction.emailFrom}`);
+      this.logger.log(`   Email Subject: ${transaction.emailSubject}`);
 
-      // Match user by account last 4
-      await this.creditUserWallet(transaction, messageId);
+      // TEMPORARY: Skip wallet crediting for testing - just log what would happen
+      this.logger.log(`🔍 TESTING MODE: Would credit wallet (skipping actual credit)`);
+      this.logger.log(`   Would find user with bankAccountLast4: ${transaction.accountLast4}`);
+      this.logger.log(`   Would credit amount: PKR ${transaction.amount}`);
+      
+      // Uncomment below to actually credit wallet:
+      // await this.creditUserWallet(transaction, messageId);
 
     } catch (error) {
       this.logger.error(`Error processing email message ${messageId}:`, error);
