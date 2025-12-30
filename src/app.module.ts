@@ -40,6 +40,8 @@ import { BankTransfersModule } from './bank-transfers/bank-transfers.module';
 import { BankWithdrawalsModule } from './bank-withdrawals/bank-withdrawals.module';
 import { SettingsModule } from './settings/settings.module';
 import { MarketplaceModule } from './marketplace/marketplace.module';
+import { TokenPriceHistoryModule } from './token-price-history/token-price-history.module';
+import { WebSocketModule } from './websocket/websocket.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ActivityLoggingInterceptor } from './activities/interceptors/activity-logging.interceptor';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -93,6 +95,8 @@ import { User } from './admin/entities/user.entity';
     BankWithdrawalsModule, // Bank withdrawal requests
     SettingsModule, // Settings management (bank account details, etc.)
     MarketplaceModule, // Peer-to-peer token marketplace
+    TokenPriceHistoryModule, // Token price history tracking
+    WebSocketModule, // WebSocket real-time updates
   ],
   controllers: [AppController],
   providers: [

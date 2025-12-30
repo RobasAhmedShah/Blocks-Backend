@@ -22,6 +22,7 @@ import { BuyTokensDto } from './dto/buy-tokens.dto';
 import { GetListingsDto, ListingSortBy } from './dto/get-listings.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CertificatesService } from '../certificates/certificates.service';
+import { TokenPriceHistoryService } from '../token-price-history/token-price-history.service';
 
 @Injectable()
 export class MarketplaceService {
@@ -48,6 +49,7 @@ export class MarketplaceService {
     private readonly eventEmitter: EventEmitter2,
     private readonly notificationsService: NotificationsService,
     private readonly certificatesService: CertificatesService,
+    private readonly tokenPriceHistoryService: TokenPriceHistoryService,
   ) {}
 
   /**
@@ -251,6 +253,20 @@ export class MarketplaceService {
       }
       
       return listingWithRelations;
+    }).then(async (listing) => {
+      // Record price_event for listing creation (NOT token_price_history)
+      try {
+        await this.tokenPriceHistoryService.recordListingCreated(
+          listing.id,
+          listing.propertyId,
+          listing.pricePerToken as Decimal,
+          listing.totalTokens as Decimal,
+          listing.sellerId,
+        );
+      } catch (error) {
+        this.logger.error('Failed to record listing price event (non-blocking):', error);
+      }
+      return listing;
     });
   }
 
@@ -735,6 +751,20 @@ export class MarketplaceService {
       }
       
       return tradeWithRelations;
+    }).then(async (trade) => {
+      // Record price history AFTER transaction commits
+      try {
+        await this.tokenPriceHistoryService.recordMarketplaceTrade(
+          trade.id,
+          trade.propertyId,
+          trade.pricePerToken as Decimal,
+          trade.tokensBought as Decimal,
+          trade.buyerId,
+        );
+      } catch (error) {
+        this.logger.error('Failed to record price history (non-blocking):', error);
+      }
+      return trade;
     });
   }
 

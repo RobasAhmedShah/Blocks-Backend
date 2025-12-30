@@ -12,6 +12,7 @@ import { Transaction } from '../transactions/entities/transaction.entity';
 import { User } from '../admin/entities/user.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CertificatesModule } from '../certificates/certificates.module';
+import { TokenPriceHistoryModule } from '../token-price-history/token-price-history.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { CertificatesModule } from '../certificates/certificates.module';
     ]),
     NotificationsModule,
     CertificatesModule,
+    TokenPriceHistoryModule,
   ],
   controllers: [MarketplaceController],
   providers: [MarketplaceService],
