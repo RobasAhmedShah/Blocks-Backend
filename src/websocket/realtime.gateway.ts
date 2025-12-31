@@ -156,6 +156,7 @@ export class RealtimeGateway
 
   /**
    * Listen to price event from EventEmitter and broadcast to subscribed clients
+   * NOTE: This is kept for backward compatibility but may not be used if using candle-based updates
    */
   @OnEvent('price.event.created')
   handlePriceEventCreated(payload: {
@@ -180,6 +181,38 @@ export class RealtimeGateway
 
     this.logger.debug(
       `Broadcasted price update for property ${payload.propertyId} to room ${room}`,
+    );
+  }
+
+  /**
+   * Listen to candle update event from scheduled aggregation task
+   * Broadcasts aggregated candle data (updated every 15 minutes)
+   */
+  @OnEvent('candle.updated')
+  handleCandleUpdated(payload: {
+    propertyId: string;
+    candle: {
+      date: Date;
+      openPrice: number;
+      highPrice: number;
+      lowPrice: number;
+      closePrice: number;
+      volume: number;
+      tradeCount: number;
+    };
+    timestamp: Date;
+  }) {
+    const room = `property:${payload.propertyId}`;
+
+    // Broadcast candle update to all clients subscribed to this property
+    this.server.to(room).emit('candle:updated', {
+      propertyId: payload.propertyId,
+      candle: payload.candle,
+      timestamp: payload.timestamp,
+    });
+
+    this.logger.debug(
+      `Broadcasted candle update for property ${payload.propertyId} to room ${room}`,
     );
   }
 }
