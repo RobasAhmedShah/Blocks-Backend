@@ -1,0 +1,35 @@
+### Test Gmail Pub/Sub Webhook Locally
+### This simulates what Google Cloud Pub/Sub sends
+
+### Step 1: Create test message data
+### The actual Gmail event payload (this is what gets base64 encoded)
+# {
+#   "emailAddress": "test@gmail.com",
+#   "historyId": "123456789"
+# }
+
+### Step 2: Base64 encode it (or use the pre-encoded version below)
+### In PowerShell: [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('{"emailAddress":"test@gmail.com","historyId":"123456789"}'))
+### Result: eyJlbWFpbEFkZHJlc3MiOiJ0ZXN0QGdtYWlsLmNvbSIsImhpc3RvcnlJZCI6IjEyMzQ1Njc4OSJ9
+
+POST http://localhost:3000/api/pubsub/gmail
+Content-Type: application/json
+
+{
+  "message": {
+    "data": "eyJlbWFpbEFkZHJlc3MiOiJ0ZXN0QGdtYWlsLmNvbSIsImhpc3RvcnlJZCI6IjEyMzQ1Njc4OSJ9",
+    "messageId": "test-message-123",
+    "publishTime": "2025-01-27T10:00:00.000Z"
+  },
+  "subscription": "projects/blocks-1b5ba/subscriptions/gmail-deposit-push-sub"
+}
+
+### Expected Response:
+### {
+###   "success": true,
+###   "message": "Gmail event processed successfully"
+### }
+
+### Check your console/terminal for:
+### 📩 Gmail Push Received: { ... }
+
