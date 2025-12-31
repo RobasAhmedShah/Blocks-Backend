@@ -3,17 +3,21 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import Decimal from 'decimal.js';
 import { Property } from './entities/property.entity';
+import { PropertyToken } from './entities/property-token.entity';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { UpdatePropertyStatusDto } from './dto/update-property-status.dto';
 import { Organization } from '../organizations/entities/organization.entity';
 import { UploadService } from '../upload/upload.service';
+import { PropertyTokenResponseDto } from './dto/property-token-response.dto';
 
 @Injectable()
 export class PropertiesService {
   constructor(
     @InjectRepository(Property)
     private readonly propertyRepo: Repository<Property>,
+    @InjectRepository(PropertyToken)
+    private readonly tokenRepo: Repository<PropertyToken>,
     @InjectRepository(Organization)
     private readonly orgRepo: Repository<Organization>,
     private readonly uploadService: UploadService,
@@ -80,27 +84,89 @@ export class PropertiesService {
     });
   }
 
-  async findOne(id: string) {
-    return this.propertyRepo.findOne({ where: { id }, relations: ['organization'] });
-  }
+  async findOne(id: string, includeTokens = false) {
+    const property = await this.propertyRepo.findOne({
+      where: { id },
+      relations: ['organization'],
+    });
 
-  async findBySlug(slug: string) {
-    return this.propertyRepo.findOne({ where: { slug }, relations: ['organization'] });
-  }
-
-  async findByDisplayCode(displayCode: string) {
-    return this.propertyRepo.findOne({ where: { displayCode }, relations: ['organization'] });
-  }
-
-  async findByIdOrDisplayCode(idOrCode: string) {
-    // Check if it's a UUID format (contains hyphens and is 36 chars)
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrCode);
-    
-    if (isUuid) {
-      return this.propertyRepo.findOne({ where: { id: idOrCode }, relations: ['organization'] });
-    } else {
-      return this.propertyRepo.findOne({ where: { displayCode: idOrCode }, relations: ['organization'] });
+    if (property && includeTokens) {
+      const tokens = await this.tokenRepo.find({
+        where: { propertyId: property.id, isActive: true },
+        order: { displayOrder: 'ASC', createdAt: 'ASC' },
+      });
+      return { ...property, tokens };
     }
+
+    return property;
+  }
+
+  async findBySlug(slug: string, includeTokens = false) {
+    const property = await this.propertyRepo.findOne({
+      where: { slug },
+      relations: ['organization'],
+    });
+
+    if (property && includeTokens) {
+      const tokens = await this.tokenRepo.find({
+        where: { propertyId: property.id, isActive: true },
+        order: { displayOrder: 'ASC', createdAt: 'ASC' },
+      });
+      return { ...property, tokens };
+    }
+
+    return property;
+  }
+
+  async findByDisplayCode(displayCode: string, includeTokens = false) {
+    const property = await this.propertyRepo.findOne({
+      where: { displayCode },
+      relations: ['organization'],
+    });
+
+    if (property && includeTokens) {
+      const tokens = await this.tokenRepo.find({
+        where: { propertyId: property.id, isActive: true },
+        order: { displayOrder: 'ASC', createdAt: 'ASC' },
+      });
+      return { ...property, tokens };
+    }
+
+    return property;
+  }
+
+  async findByIdOrDisplayCode(idOrCode: string, includeTokens = false) {
+    // Check if it's a UUID format (contains hyphens and is 36 chars)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      idOrCode,
+    );
+
+    let property: Property | null;
+    if (isUuid) {
+      property = await this.propertyRepo.findOne({
+        where: { id: idOrCode },
+        relations: ['organization'],
+      });
+    } else {
+      property = await this.propertyRepo.findOne({
+        where: { displayCode: idOrCode },
+        relations: ['organization'],
+      });
+    }
+
+    if (property && includeTokens) {
+      const tokens = await this.tokenRepo.find({
+        where: { propertyId: property.id },
+        order: { displayOrder: 'ASC', createdAt: 'ASC' },
+      });
+      // Convert tokens to DTOs for consistent response format
+      return { 
+        ...property, 
+        tokens: tokens.length > 0 ? PropertyTokenResponseDto.fromEntities(tokens) : []
+      };
+    }
+
+    return property;
   }
 
   async findBySlugOrDisplayCode(slugOrCode: string) {
@@ -173,7 +239,20 @@ export class PropertiesService {
   }
 
   async remove(id: string) {
-    const property = await this.findByIdOrDisplayCode(id);
+    // Check if it's a UUID format (contains hyphens and is 36 chars)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+    let property: Property | null;
+    if (isUuid) {
+      property = await this.propertyRepo.findOne({
+        where: { id },
+      });
+    } else {
+      property = await this.propertyRepo.findOne({
+        where: { displayCode: id },
+      });
+    }
+
     if (!property) {
       throw new NotFoundException(`Property with id or displayCode '${id}' not found`);
     }

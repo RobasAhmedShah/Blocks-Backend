@@ -3,6 +3,7 @@ import { DecimalTransformer } from '../../common/decimal.transformer';
 import Decimal from 'decimal.js';
 import { User } from '../../admin/entities/user.entity';
 import { Property } from '../../properties/entities/property.entity';
+import { PropertyToken } from '../../properties/entities/property-token.entity';
 
 @Entity('investments')
 export class Investment {
@@ -28,6 +29,14 @@ export class Investment {
   @ManyToOne(() => Property, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'propertyId' })
   property: Property;
+
+  @Index()
+  @Column({ type: 'uuid', nullable: true, name: 'property_token_id' })
+  propertyTokenId?: string | null;
+
+  @ManyToOne(() => PropertyToken, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'property_token_id' })
+  propertyToken?: PropertyToken | null;
 
   @Column('numeric', { precision: 18, scale: 6, transformer: DecimalTransformer })
   tokensPurchased: Decimal;

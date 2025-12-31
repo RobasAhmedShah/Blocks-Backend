@@ -33,8 +33,15 @@ export class PropertiesController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    const property = await this.propertiesService.findByIdOrDisplayCode(id);
+  async findOne(
+    @Param('id') id: string,
+    @Query('includeTokens') includeTokens?: string,
+  ) {
+    const includeTokensBool = includeTokens === 'true';
+    const property = await this.propertiesService.findByIdOrDisplayCode(
+      id,
+      includeTokensBool,
+    );
     if (!property) throw new NotFoundException('Property not found');
     return property;
   }

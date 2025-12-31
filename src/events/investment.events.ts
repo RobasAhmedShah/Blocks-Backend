@@ -10,6 +10,8 @@ export interface InvestmentCompletedEvent {
   userDisplayCode: string;
   propertyId: string;
   propertyDisplayCode: string;
+  propertyTokenId?: string | null; // NEW: Token tier ID (if investing in specific token)
+  propertyTokenDisplayCode?: string | null; // NEW: Token symbol (e.g., "MBT")
   organizationId: string;
   organizationDisplayCode: string;
   tokensPurchased: Decimal;

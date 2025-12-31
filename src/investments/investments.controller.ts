@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query, NotFoundException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InvestmentsService } from './investments.service';
 import { CreateInvestmentDto } from './dto/create-investment.dto';
 import { InvestDto } from './dto/invest.dto';
@@ -17,8 +26,30 @@ export class InvestmentsController {
 
   @Post('invest')
   async invest(@Body() dto: InvestDto) {
-    const investment = await this.investmentsService.invest(dto.userId, dto.propertyId, new Decimal(dto.tokensToBuy));
-    return { success: true, data: investment };
+    // Support both propertyTokenId (new) and propertyId (legacy)
+    if (dto.propertyTokenId) {
+      // NEW: Investment in specific token tier
+      const investment = await this.investmentsService.invest(
+        dto.userId,
+        dto.propertyTokenId,
+        new Decimal(dto.tokensToBuy),
+        true, // isTokenId = true
+      );
+      return { success: true, data: investment };
+    } else if (dto.propertyId) {
+      // LEGACY: Investment in property (backward compatibility)
+      const investment = await this.investmentsService.invest(
+        dto.userId,
+        dto.propertyId,
+        new Decimal(dto.tokensToBuy),
+        false, // isTokenId = false
+      );
+      return { success: true, data: investment };
+    } else {
+      throw new BadRequestException(
+        'Either propertyTokenId or propertyId must be provided',
+      );
+    }
   }
 
   @Get()

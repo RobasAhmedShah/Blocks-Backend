@@ -8,6 +8,7 @@ import { Investment } from '../investments/entities/investment.entity';
 import { Wallet } from '../wallet/entities/wallet.entity';
 import { Transaction } from '../transactions/entities/transaction.entity';
 import { Property } from '../properties/entities/property.entity';
+import { PropertyToken } from '../properties/entities/property-token.entity';
 import { User } from '../admin/entities/user.entity';
 import { Organization } from '../organizations/entities/organization.entity';
 import { DistributeRoiDto } from './dto/distribute-roi.dto';
@@ -31,27 +32,82 @@ export class RewardsService {
 
   async distributeRoi(dto: DistributeRoiDto) {
     return this.dataSource.transaction(async (manager) => {
-      // Fetch property and all active investments for this property
-      // Check if propertyId is UUID or displayCode
-      const isPropertyUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dto.propertyId);
-      
-      const property = await manager.findOne(Property, { 
-        where: isPropertyUuid ? { id: dto.propertyId } : { displayCode: dto.propertyId } 
-      });
+      let property: Property | null = null;
+      let propertyToken: PropertyToken | null = null;
+      let totalTokens: Decimal;
+      let investmentWhere: any;
+
+      if (dto.propertyTokenId) {
+        // NEW: Token-specific ROI distribution
+        // Fetch propertyToken
+        const isTokenUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          dto.propertyTokenId,
+        );
+
+        propertyToken = await manager.findOne(PropertyToken, {
+          where: isTokenUuid
+            ? { id: dto.propertyTokenId }
+            : { displayCode: dto.propertyTokenId },
+          relations: ['property'],
+        });
+
+        if (!propertyToken) {
+          throw new Error(
+            `Property token not found: ${dto.propertyTokenId}`,
+          );
+        }
+
+        property = propertyToken.property;
+        totalTokens = propertyToken.totalTokens as Decimal;
+        investmentWhere = {
+          propertyTokenId: propertyToken.id,
+          status: 'confirmed',
+        };
+      } else if (dto.propertyId) {
+        // LEGACY: Property-level ROI distribution (backward compatibility)
+        const isPropertyUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          dto.propertyId,
+        );
+
+        const foundProperty = await manager.findOne(Property, {
+          where: isPropertyUuid
+            ? { id: dto.propertyId }
+            : { displayCode: dto.propertyId },
+        });
+
+        if (!foundProperty) {
+          throw new Error('Property not found');
+        }
+
+        property = foundProperty;
+
+        totalTokens = property.totalTokens as Decimal;
+        investmentWhere = {
+          propertyId: property.id,
+          status: 'confirmed',
+        };
+      } else {
+        throw new Error(
+          'Either propertyTokenId or propertyId must be provided',
+        );
+      }
+
+      // Ensure property is not null at this point
       if (!property) {
         throw new Error('Property not found');
       }
 
       const investments = await manager.find(Investment, {
-        where: { propertyId: property.id, status: 'confirmed' },  // Use property.id (UUID)
+        where: investmentWhere,
       });
 
       if (investments.length === 0) {
-        throw new Error('No active investments found for this property');
+        throw new Error(
+          `No active investments found for ${propertyToken ? 'token tier' : 'property'}`,
+        );
       }
 
       const totalRoi = new Decimal(dto.totalRoiUSDT);
-      const totalTokens = property.totalTokens as Decimal;
       const rewards: Reward[] = [];
 
       // Group investments by userId to aggregate rewards per user
@@ -125,9 +181,12 @@ export class RewardsService {
         const reward = manager.getRepository(Reward).create({
           userId,
           investmentId: userInvestments[0].id, // Reference first investment
+          propertyTokenId: propertyToken?.id || null, // NEW: Link to token tier if token-specific ROI
           amountUSDT: roiShare,
           type: 'roi',
-          description: `ROI distribution for property ${property.title}`,
+          description: propertyToken
+            ? `ROI distribution for ${propertyToken.name} (${propertyToken.displayCode}) in ${property.title}`
+            : `ROI distribution for property ${property.title}`,
           status: 'distributed',
           displayCode: rewardDisplayCode,
         });
