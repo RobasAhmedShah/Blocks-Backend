@@ -176,24 +176,31 @@ export class GmailService {
       this.logger.log('🔍 ========== PROCESSING PUB/SUB MESSAGE ==========');
       this.logger.log('🔍 Raw Pub/Sub message:', JSON.stringify(pubSubMessage, null, 2));
 
-      if (!pubSubMessage.message) {
-        this.logger.error('❌ Pub/Sub message missing message field');
-        this.logger.error('❌ Full body:', JSON.stringify(pubSubMessage, null, 2));
+      let gmailEvent: GmailEventDto;
+
+      // Gmail Watch sends DIRECT payload: {emailAddress, historyId}
+      // NOT wrapped in message.data like standard Pub/Sub
+      if ('emailAddress' in pubSubMessage && 'historyId' in pubSubMessage) {
+        this.logger.log('🔍 Direct Gmail Watch event detected');
+        gmailEvent = {
+          emailAddress: (pubSubMessage as any).emailAddress,
+          historyId: String((pubSubMessage as any).historyId),
+        };
+      } 
+      // Fallback: Handle standard Pub/Sub format (for testing/manual calls)
+      else if (pubSubMessage.message?.data) {
+        this.logger.log('🔍 Standard Pub/Sub format detected, decoding base64...');
+        const decodedData = Buffer.from(pubSubMessage.message.data, 'base64').toString('utf-8');
+        this.logger.log('🔍 Decoded data:', decodedData);
+        gmailEvent = JSON.parse(decodedData);
+      } 
+      else {
+        this.logger.error('❌ Invalid message format');
+        this.logger.error('❌ Expected: {emailAddress, historyId} OR {message: {data: "base64..."}}');
+        this.logger.error('❌ Received:', JSON.stringify(pubSubMessage, null, 2));
         return null;
       }
 
-      if (!pubSubMessage.message.data) {
-        this.logger.error('❌ Pub/Sub message missing data field');
-        this.logger.error('❌ Message object:', JSON.stringify(pubSubMessage.message, null, 2));
-        return null;
-      }
-
-      this.logger.log('🔍 Decoding base64 data...');
-      // Decode base64 to string
-      const decodedData = Buffer.from(pubSubMessage.message.data, 'base64').toString('utf-8');
-      this.logger.log('🔍 Decoded data:', decodedData);
-      
-      const gmailEvent: GmailEventDto = JSON.parse(decodedData);
       this.logger.log('🔍 Parsed Gmail event:', JSON.stringify(gmailEvent, null, 2));
 
       if (!gmailEvent.emailAddress || !gmailEvent.historyId) {
@@ -454,13 +461,15 @@ export class GmailService {
         return;
       }
 
-      // TEMPORARY: Allow debit transactions for testing if filter is disabled
-      if (enableBankFilter && !transaction.isCredit) {
-        this.logger.debug('Ignoring debit transaction');
+      // ALWAYS skip debit transactions - only process credit (received) emails
+      if (!transaction.isCredit) {
+        this.logger.log(`⚠️  Skipping debit transaction - only processing credit (received) emails`);
+        this.logger.log(`   Email subject: ${subject}`);
+        this.logger.log(`   Email indicates: sent from account (debit)`);
         return;
-      } else if (!enableBankFilter && !transaction.isCredit) {
-        this.logger.log(`⚠️  Processing debit transaction (filter disabled for testing)`);
       }
+      
+      this.logger.log(`✅ Credit transaction detected - email indicates: received in account`);
 
       this.logger.log(`💰 Transaction parsed successfully:`);
       this.logger.log(`   Amount: PKR ${transaction.amount}`);
@@ -470,12 +479,17 @@ export class GmailService {
       this.logger.log(`   Email From: ${transaction.emailFrom}`);
       this.logger.log(`   Email Subject: ${transaction.emailSubject}`);
 
-      // TEMPORARY: Skip wallet crediting for testing - just log what would happen
-      this.logger.log(`🔍 TESTING MODE: Would credit wallet (skipping actual credit)`);
-      this.logger.log(`   Would find user with bankAccountLast4: ${transaction.accountLast4}`);
-      this.logger.log(`   Would credit amount: PKR ${transaction.amount}`);
+      // TEMPORARY: Skip wallet crediting - bank account feature not integrated yet
+      // When bank account feature is added, uncomment the creditUserWallet call below
+      this.logger.log(`⚠️  WALLET CREDITING DISABLED: Bank account feature not yet integrated`);
+      this.logger.log(`📊 Would credit wallet:`);
+      this.logger.log(`   - User match: bankAccountLast4 = ***${transaction.accountLast4}`);
+      this.logger.log(`   - Amount: PKR ${transaction.amount}`);
+      this.logger.log(`   - Transaction Ref: ${transaction.transactionRef}`);
+      this.logger.log(`   - Email Message ID: ${messageId}`);
+      this.logger.log(`   ✅ When bank accounts are integrated, this will automatically credit the wallet`);
       
-      // Uncomment below to actually credit wallet:
+      // TODO: Uncomment when bank account feature is integrated:
       // await this.creditUserWallet(transaction, messageId);
 
     } catch (error) {
@@ -559,17 +573,35 @@ export class GmailService {
       const accountLast4 = accountMatch[1];
 
       // Extract transaction reference (for idempotency)
-      const refMatch = body.match(/Ref[:\-]?\s*([A-Z0-9]+)/i) ||
-                      body.match(/Reference[:\-]?\s*([A-Z0-9]+)/i) ||
-                      body.match(/Txn[:\-]?\s*([A-Z0-9]+)/i);
+      // Look for "Transaction Reference : 24594" format (must come after "Transaction Reference")
+      // Priority: Full phrase first, then shorter patterns
+      let refMatch = body.match(/Transaction\s+Reference\s*[:\-]?\s*([A-Z0-9]+)/i);
+      if (!refMatch) {
+        refMatch = body.match(/Transaction\s+Ref\s*[:\-]?\s*([A-Z0-9]+)/i);
+      }
+      if (!refMatch) {
+        // Avoid matching "Reference" in the middle of "Transaction Reference"
+        refMatch = body.match(/(?<!Transaction\s)Reference\s*[:\-]?\s*([A-Z0-9]+)/i);
+      }
+      if (!refMatch) {
+        refMatch = body.match(/Ref[:\-]?\s*([A-Z0-9]+)/i);
+      }
+      if (!refMatch) {
+        refMatch = body.match(/Txn[:\-]?\s*([A-Z0-9]+)/i);
+      }
       
-      const transactionRef = refMatch ? refMatch[1] : `EMAIL_${Date.now()}`;
+      const transactionRef = refMatch ? refMatch[1].trim() : `EMAIL_${Date.now()}`;
 
       // Determine if credit (received) or debit (sent)
-      const isCredit = !body.toLowerCase().includes('sent from your account') &&
-                       (body.toLowerCase().includes('received') ||
-                        body.toLowerCase().includes('credited') ||
-                        body.toLowerCase().includes('deposit'));
+      // Credit: "PKR 5,000.00 has been received in your Account No: ***0018"
+      // Debit: "PKR 5,000.00 have been sent from your Account No: ***0012"
+      const lowerBody = body.toLowerCase();
+      const isCredit = lowerBody.includes('has been received') ||
+                       lowerBody.includes('have been received') ||
+                       lowerBody.includes('received in your account') ||
+                       (lowerBody.includes('received') && 
+                        !lowerBody.includes('sent from your account') &&
+                        !lowerBody.includes('have been sent'));
 
       return {
         amount,
