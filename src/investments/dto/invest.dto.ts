@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsNumber, Min } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, Min, IsOptional } from 'class-validator';
 
 export class InvestDto {
   @IsString()
@@ -6,8 +6,12 @@ export class InvestDto {
   userId: string;
 
   @IsString()
-  @IsNotEmpty()
-  propertyId: string;
+  @IsOptional()
+  propertyId?: string; // Optional for backward compatibility
+
+  @IsString()
+  @IsOptional()
+  propertyTokenId?: string; // NEW: Token tier ID (UUID or displayCode like "MBT")
 
   @IsNumber()
   @Min(0.000001)

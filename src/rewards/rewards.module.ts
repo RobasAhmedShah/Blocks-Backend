@@ -8,6 +8,7 @@ import { Wallet } from '../wallet/entities/wallet.entity';
 import { Transaction } from '../transactions/entities/transaction.entity';
 import { User } from '../admin/entities/user.entity';
 import { Property } from '../properties/entities/property.entity';
+import { PropertyToken } from '../properties/entities/property-token.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TokenLock } from '../marketplace/entities/token-lock.entity';
 import { MarketplaceListing } from '../marketplace/entities/marketplace-listing.entity';
@@ -21,6 +22,7 @@ import { MarketplaceListing } from '../marketplace/entities/marketplace-listing.
       Transaction,
       User,
       Property,
+      PropertyToken,
       TokenLock,
       MarketplaceListing,
     ]),

@@ -202,3 +202,4 @@ COMMENT ON COLUMN token_price_history.derived_from_event_id IS 'Reference to pri
 -- WHERE table_name IN ('price_event', 'token_price_history') 
 -- AND data_type = 'numeric';
 
+

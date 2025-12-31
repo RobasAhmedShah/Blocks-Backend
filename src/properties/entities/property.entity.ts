@@ -1,7 +1,18 @@
-import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import { DecimalTransformer } from '../../common/decimal.transformer';
 import Decimal from 'decimal.js';
 import { Organization } from '../../organizations/entities/organization.entity';
+import { PropertyToken } from './property-token.entity';
 
 @Entity('properties')
 export class Property {
@@ -67,6 +78,9 @@ export class Property {
 
   @Column({ type: 'text', nullable: true })
   legalDocPath?: string | null;
+
+  @OneToMany(() => PropertyToken, (token) => token.property)
+  tokens?: PropertyToken[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
