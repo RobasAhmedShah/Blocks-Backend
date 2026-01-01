@@ -2,6 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { Property } from '../properties/entities/property.entity';
+import { PropertyToken } from '../properties/entities/property-token.entity';
+import { PropertyTokenResponseDto } from '../properties/dto/property-token-response.dto';
 import { PropertyFilterDto, PropertyFilter } from './dto/property-filter.dto';
 import Decimal from 'decimal.js';
 
@@ -20,6 +22,8 @@ export class MobilePropertiesService {
   constructor(
     @InjectRepository(Property)
     private readonly propertyRepo: Repository<Property>,
+    @InjectRepository(PropertyToken)
+    private readonly tokenRepo: Repository<PropertyToken>,
   ) {}
 
   async findAllWithFilters(query: PropertyFilterDto): Promise<PaginatedResponse<any>> {
@@ -119,7 +123,47 @@ export class MobilePropertiesService {
       throw new NotFoundException(`Property with id or displayCode '${id}' not found`);
     }
 
-    return this.transformProperty(property);
+    // Fetch tokens for this property
+    const tokens = await this.tokenRepo.find({
+      where: { propertyId: property.id, isActive: true },
+      order: { displayOrder: 'ASC', createdAt: 'ASC' },
+    });
+
+    console.log(`[MobilePropertiesService] Property ${property.id} (${property.displayCode}): Found ${tokens.length} active tokens`);
+    if (tokens.length > 0) {
+      console.log(`[MobilePropertiesService] Token details:`, tokens.map(t => ({
+        id: t.id,
+        name: t.name,
+        symbol: t.tokenSymbol,
+        isActive: t.isActive,
+        roi: t.expectedROI,
+      })));
+    } else {
+      // Check if there are any tokens at all (including inactive)
+      const allTokens = await this.tokenRepo.find({
+        where: { propertyId: property.id },
+      });
+      console.log(`[MobilePropertiesService] Total tokens (including inactive): ${allTokens.length}`);
+      if (allTokens.length > 0) {
+        console.log(`[MobilePropertiesService] All tokens (including inactive):`, allTokens.map(t => ({
+          id: t.id,
+          name: t.name,
+          symbol: t.tokenSymbol,
+          isActive: t.isActive,
+        })));
+      }
+    }
+
+    const transformedProperty = this.transformProperty(property);
+    
+    // Add tokens to the response
+    transformedProperty.tokens = tokens.length > 0 
+      ? PropertyTokenResponseDto.fromEntities(tokens) 
+      : [];
+
+    console.log(`[MobilePropertiesService] Returning property with ${transformedProperty.tokens?.length || 0} tokens in response`);
+
+    return transformedProperty;
   }
 
   private applyPredefinedFilter(
