@@ -1,5 +1,6 @@
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn, OneToMany } from 'typeorm';
 import { PaymentMethod } from '../../payment-methods/entities/payment-method.entity';
+import { LinkedBankAccount } from '../../linked-bank-accounts/entities/linked-bank-account.entity';
 
 @Entity('users')
 export class User {
@@ -51,6 +52,9 @@ export class User {
 
   @OneToMany(() => PaymentMethod, (paymentMethod) => paymentMethod.user)
   paymentMethods: PaymentMethod[];
+
+  @OneToMany(() => LinkedBankAccount, (linkedBankAccount) => linkedBankAccount.user)
+  linkedBankAccounts: LinkedBankAccount[];
 }
 
 
