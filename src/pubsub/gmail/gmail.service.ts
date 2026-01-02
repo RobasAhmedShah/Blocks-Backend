@@ -636,8 +636,12 @@ export class GmailService {
       const descMatch = body.match(/Transaction Description\s*:\s*(.+?)(?:\n|Sender|$)/i);
       const transactionDescription = descMatch?.[1]?.trim();
 
+      // Calculate USD equivalent for logging
+      const exchangeRate = this.getPKRToUSDRate();
+      const amountUSD = amount.div(exchangeRate);
+
       this.logger.log(`💰 Transaction parsed successfully:`);
-      this.logger.log(`   Amount: PKR ${amount}`);
+      this.logger.log(`   Amount: PKR ${amount.toFixed(2)} (≈ ${amountUSD.toFixed(6)} USD)`);
       this.logger.log(`   Receiver Account: ***${receiverLast4 || 'N/A'}`);
       this.logger.log(`   Sender Account: ***${senderAccountLast4}`);
       this.logger.log(`   Sender Name: ${senderName || 'N/A'}`);
@@ -676,6 +680,25 @@ export class GmailService {
     }
     
     return null;
+  }
+
+  /**
+   * Get PKR to USD exchange rate from environment variable
+   * Defaults to 278.5 if not set (approximate current rate)
+   */
+  private getPKRToUSDRate(): Decimal {
+    const rateStr = this.configService.get<string>('PKR_TO_USD_RATE');
+    if (rateStr) {
+      const rate = new Decimal(rateStr);
+      if (rate.gt(0)) {
+        return rate;
+      }
+    }
+    
+    // Default rate (can be updated via environment variable)
+    const defaultRate = new Decimal('278.5');
+    this.logger.debug(`Using default PKR to USD rate: ${defaultRate} (set PKR_TO_USD_RATE env var to override)`);
+    return defaultRate;
   }
 
   /**
@@ -742,13 +765,22 @@ export class GmailService {
         return;
       }
 
-      // Credit wallet using wallet service
+      // Convert PKR to USD using exchange rate
+      const exchangeRate = this.getPKRToUSDRate();
+      const amountUSD = transaction.amount.div(exchangeRate);
+      
+      this.logger.log(`💱 Currency Conversion:`);
+      this.logger.log(`   PKR Amount: ${transaction.amount.toFixed(2)}`);
+      this.logger.log(`   Exchange Rate: 1 USD = ${exchangeRate.toFixed(2)} PKR`);
+      this.logger.log(`   USD Amount: ${amountUSD.toFixed(6)}`);
+
+      // Credit wallet using wallet service (in USD)
       await this.walletService.deposit({
         userId: user.id,
-        amountUSDT: transaction.amount.toNumber(),
+        amountUSDT: amountUSD.toNumber(),
       });
 
-      this.logger.log(`✅ Credited PKR ${transaction.amount} to user ${user.displayCode} (${user.email}) from bank email`);
+      this.logger.log(`✅ Credited ${amountUSD.toFixed(6)} USD (PKR ${transaction.amount.toFixed(2)}) to user ${user.displayCode} (${user.email}) from bank email`);
     });
   }
 }
