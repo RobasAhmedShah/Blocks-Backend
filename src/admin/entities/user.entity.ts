@@ -41,9 +41,6 @@ export class User {
   @Column({ type: 'text', nullable: true })
   webPushSubscription?: string | null;
 
-  @Column({ type: 'varchar', length: 4, nullable: true })
-  bankAccountLast4?: string | null;
-
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
