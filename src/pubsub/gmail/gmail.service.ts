@@ -436,20 +436,20 @@ export class GmailService {
 
       this.logger.log(`📧 Email received - From: ${from}, Subject: ${subject}`);
 
-      // STRICT: Only process emails from myABL@abl.com
-      if (!this.isAlliedBankEmail(from, subject)) {
-        this.logger.log(`⚠️  Skipping email - not from myABL@abl.com`);
+      // STEP 1: Extract and normalize email body (HTML → Plain Text)
+      const body = this.extractEmailBody(message.payload);
+      this.logger.log(`📄 Email body extracted (${body.length} chars)`);
+      this.logger.log(`📄 Email body content (first 500 chars): ${body.substring(0, 500)}`);
+
+      // STEP 2: Validate source - must be from Allied Bank (checks both headers and body)
+      if (!this.isAlliedBankEmail(from, subject, body)) {
+        this.logger.log(`⚠️  Skipping email - not from Allied Bank`);
         this.logger.log(`   From: ${from}`);
         this.logger.log(`   Subject: ${subject}`);
         return;
       }
 
-      // Parse email body
-      const body = this.extractEmailBody(message.payload);
-      this.logger.log(`📄 Email body extracted (${body.length} chars)`);
-      this.logger.log(`📄 Email body content (first 500 chars): ${body.substring(0, 500)}`);
-
-      // Parse transaction details
+      // STEP 3: Parse transaction details (structured extraction)
       const transaction = this.parseTransaction(body, subject, from);
       if (!transaction) {
         this.logger.warn('❌ Failed to parse transaction from email');
@@ -486,65 +486,116 @@ export class GmailService {
   }
 
   /**
-   * Check if email is from Allied Bank (myABL@abl.com) - STRICT CHECK
-   * Only accepts emails from exactly 'myABL@abl.com'
-   * Note: Credit/debit check is done separately in parseTransaction
+   * Validate email source - must be from Allied Bank
+   * Checks both email headers and body content
    */
-  private isAlliedBankEmail(from: string, subject: string): boolean {
-    // STRICT: Check if from field contains 'myABL@abl.com' (case-insensitive for email)
-    // Email From field format: "Name <myABL@abl.com>" or "myABL@abl.com" or "Intelik-blockchain <myABL@abl.com>"
+  private isAlliedBankEmail(from: string, subject: string, bodyText: string): boolean {
     const fromLower = from.toLowerCase();
+    const bodyLower = bodyText.toLowerCase();
     
-    // Check for exact email address match (case-insensitive)
-    // This will match: "myABL@abl.com", "MyABL@abl.com", "MYABL@ABL.COM", etc.
-    // And also: "Name <myABL@abl.com>", "Intelik-blockchain <myABL@abl.com>", etc.
-    if (!fromLower.includes('myabl@abl.com')) {
-      this.logger.debug(`Email not from myABL@abl.com. From: ${from}`);
+    // Check email sender
+    const fromAllied = fromLower.includes('myabl@abl.com') || 
+                       fromLower.includes('allied bank');
+    
+    // Check body content for bank name
+    const bodyAllied = bodyLower.includes('allied bank limited') ||
+                       bodyLower.includes('allied bank');
+    
+    if (!fromAllied && !bodyAllied) {
+      this.logger.debug(`Email not from Allied Bank. From: ${from}`);
       return false;
     }
 
-    // Note: Credit/debit check is done separately in parseTransaction and processEmailMessage
-    // This method only validates the sender domain
     return true;
   }
 
   /**
-   * Extract email body text
+   * Extract email body text (recursive to handle nested multipart messages)
+   * Returns normalized plain text ready for parsing
    */
   private extractEmailBody(payload: any): string {
     let body = '';
+    let htmlBody = '';
 
-    if (payload.body?.data) {
-      // Simple text body
-      body = Buffer.from(payload.body.data, 'base64').toString('utf-8');
-    } else if (payload.parts) {
-      // Multipart message
-      for (const part of payload.parts) {
+    // Recursive function to extract text from nested parts
+    const extractFromParts = (parts: any[]): void => {
+      for (const part of parts) {
+        // If this part has nested parts, recurse
+        if (part.parts && part.parts.length > 0) {
+          extractFromParts(part.parts);
+        }
+        
+        // Check mimeType
         if (part.mimeType === 'text/plain' && part.body?.data) {
           body = Buffer.from(part.body.data, 'base64').toString('utf-8');
-          break;
-        } else if (part.mimeType === 'text/html' && part.body?.data && !body) {
-          // Fallback to HTML if no plain text
-          const html = Buffer.from(part.body.data, 'base64').toString('utf-8');
-          // Simple HTML tag removal (basic)
-          body = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        } else if (part.mimeType === 'text/html' && part.body?.data && !htmlBody) {
+          htmlBody = Buffer.from(part.body.data, 'base64').toString('utf-8');
         }
       }
+    };
+
+    // Check if payload has direct body data
+    if (payload.body?.data) {
+      body = Buffer.from(payload.body.data, 'base64').toString('utf-8');
+    } else if (payload.parts) {
+      // Extract from parts (recursively handles nested structures)
+      extractFromParts(payload.parts);
     }
 
-    return body;
+    // If we have plain text, normalize it
+    if (body) {
+      return this.normalizeEmailBody(body);
+    }
+
+    // If only HTML available, normalize HTML to plain text
+    if (htmlBody) {
+      return this.normalizeEmailBody(htmlBody);
+    }
+
+    return '';
   }
 
   /**
-   * Parse transaction details from email body
+   * Normalize email body: HTML → Plain Text
+   * Removes HTML tags, scripts, styles, and normalizes whitespace
+   */
+  private normalizeEmailBody(html: string): string {
+    return html
+      .replace(/<style[\s\S]*?<\/style>/gi, '') // Remove style tags
+      .replace(/<script[\s\S]*?<\/script>/gi, '') // Remove script tags
+      .replace(/<[^>]+>/g, ' ') // Strip all HTML tags
+      .replace(/&nbsp;/g, ' ') // Replace &nbsp; with space
+      .replace(/&amp;/g, '&') // Decode HTML entities
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+  }
+
+  /**
+   * Parse transaction details from normalized email body
+   * Uses production-grade structured extraction (not regex on raw HTML)
    */
   private parseTransaction(body: string, subject: string, from: string): ParsedTransaction | null {
     try {
-      // Extract amount (PKR 2,100.00 format)
-      const amountMatch = body.match(/PKR\s*([\d,]+\.?\d*)/i) || 
-                         body.match(/Rs\.?\s*([\d,]+\.?\d*)/i) ||
-                         body.match(/([\d,]+\.?\d*)\s*PKR/i);
-      
+      // STEP 3: Detect CREDIT vs DEBIT (must be done first)
+      const direction = this.detectTransactionDirection(body);
+      if (!direction) {
+        this.logger.warn('Could not determine transaction direction (credit/debit)');
+        return null;
+      }
+
+      if (direction === 'DEBIT') {
+        this.logger.log('⚠️  Skipping debit transaction - only processing credit (received) emails');
+        return null;
+      }
+
+      this.logger.log(`✅ Credit transaction detected`);
+
+      // STEP 4: Extract amount (PKR format)
+      const amountMatch = body.match(/PKR\s*([\d,]+(?:\.\d{1,2})?)/i);
       if (!amountMatch) {
         this.logger.warn('Could not find amount in email body');
         return null;
@@ -553,54 +604,52 @@ export class GmailService {
       const amountStr = amountMatch[1].replace(/,/g, '');
       const amount = new Decimal(amountStr);
 
-      // Extract account last 4 digits (***0018 format)
-      const accountMatch = body.match(/\*\*\*(\d{4})/) || 
-                          body.match(/Account\s*[:\-]?\s*\*\*\*(\d{4})/i) ||
-                          body.match(/A\/C\s*[:\-]?\s*\*\*\*(\d{4})/i);
+      // STEP 5: Extract receiver account last 4 (for reference, not used for matching)
+      const receiverAccountMatch = body.match(/Account No:\s*\*+(\d{4})/i);
+      const receiverLast4 = receiverAccountMatch?.[1];
+
+      // STEP 6: Extract sender account last 4 (THIS IS WHAT WE MATCH FOR WALLET CREDITING)
+      // STRICT: Must have "Sender Account" before the account number
+      const senderAccountMatch = body.match(/Sender Account\s*:\s*\*+(\d{4})/i) ||
+                                 body.match(/Sender Account\s*:\s*(\d{4})/i);
       
-      if (!accountMatch) {
-        this.logger.warn('Could not find account last 4 in email body');
+      if (!senderAccountMatch) {
+        this.logger.error('❌ Could not find "Sender Account" in email body');
+        this.logger.error('   Email must contain "Sender Account : ***XXXX"');
+        this.logger.error('   Will NOT credit wallet - sender account is required');
+        this.logger.error(`   Email body preview: ${body.substring(0, 500)}`);
         return null;
       }
 
-      const accountLast4 = accountMatch[1];
+      const senderAccountLast4 = senderAccountMatch[1];
+      this.logger.log(`✅ Extracted SENDER account last 4: ***${senderAccountLast4} (matched from "Sender Account" field)`);
 
-      // Extract transaction reference (for idempotency)
-      // Look for "Transaction Reference : 24594" format (must come after "Transaction Reference")
-      // Priority: Full phrase first, then shorter patterns
-      let refMatch = body.match(/Transaction\s+Reference\s*[:\-]?\s*([A-Z0-9]+)/i);
-      if (!refMatch) {
-        refMatch = body.match(/Transaction\s+Ref\s*[:\-]?\s*([A-Z0-9]+)/i);
-      }
-      if (!refMatch) {
-        // Avoid matching "Reference" in the middle of "Transaction Reference"
-        refMatch = body.match(/(?<!Transaction\s)Reference\s*[:\-]?\s*([A-Z0-9]+)/i);
-      }
-      if (!refMatch) {
-        refMatch = body.match(/Ref[:\-]?\s*([A-Z0-9]+)/i);
-      }
-      if (!refMatch) {
-        refMatch = body.match(/Txn[:\-]?\s*([A-Z0-9]+)/i);
-      }
-      
+      // STEP 6: Extract sender name (for logging)
+      const senderNameMatch = body.match(/Sender Name\s*:\s*(.+?)(?:\n|Transaction|$)/i);
+      const senderName = senderNameMatch?.[1]?.trim();
+
+      // STEP 7: Extract transaction reference (for idempotency)
+      const refMatch = body.match(/Transaction Reference\s*:\s*(\d+)/i);
       const transactionRef = refMatch ? refMatch[1].trim() : `EMAIL_${Date.now()}`;
 
-      // Determine if credit (received) or debit (sent)
-      // Credit: "PKR 5,000.00 has been received in your Account No: ***0018"
-      // Debit: "PKR 5,000.00 have been sent from your Account No: ***0012"
-      const lowerBody = body.toLowerCase();
-      const isCredit = lowerBody.includes('has been received') ||
-                       lowerBody.includes('have been received') ||
-                       lowerBody.includes('received in your account') ||
-                       (lowerBody.includes('received') && 
-                        !lowerBody.includes('sent from your account') &&
-                        !lowerBody.includes('have been sent'));
+      // STEP 8: Extract transaction description (for logging)
+      const descMatch = body.match(/Transaction Description\s*:\s*(.+?)(?:\n|Sender|$)/i);
+      const transactionDescription = descMatch?.[1]?.trim();
+
+      this.logger.log(`💰 Transaction parsed successfully:`);
+      this.logger.log(`   Amount: PKR ${amount}`);
+      this.logger.log(`   Receiver Account: ***${receiverLast4 || 'N/A'}`);
+      this.logger.log(`   Sender Account: ***${senderAccountLast4}`);
+      this.logger.log(`   Sender Name: ${senderName || 'N/A'}`);
+      this.logger.log(`   Transaction Ref: ${transactionRef}`);
+      this.logger.log(`   Description: ${transactionDescription || 'N/A'}`);
+      this.logger.log(`   Direction: ${direction}`);
 
       return {
         amount,
-        accountLast4,
+        accountLast4: senderAccountLast4, // Use sender account for matching
         transactionRef,
-        isCredit,
+        isCredit: true, // Already validated above
         emailSubject: subject,
         emailFrom: from,
       };
@@ -608,6 +657,25 @@ export class GmailService {
       this.logger.error('Error parsing transaction:', error);
       return null;
     }
+  }
+
+  /**
+   * Detect transaction direction: CREDIT (received) or DEBIT (sent)
+   */
+  private detectTransactionDirection(text: string): 'CREDIT' | 'DEBIT' | null {
+    const lowerText = text.toLowerCase();
+    
+    if (/has been received in your account/i.test(lowerText) ||
+        /have been received in your account/i.test(lowerText)) {
+      return 'CREDIT';
+    }
+    
+    if (/have been sent from your account/i.test(lowerText) ||
+        /has been sent from your account/i.test(lowerText)) {
+      return 'DEBIT';
+    }
+    
+    return null;
   }
 
   /**
