@@ -39,6 +39,7 @@ import { PropertyRequestsModule } from './property-requests/property-requests.mo
 import { BlocksAdminModule } from './blocks-admin/blocks-admin.module';
 import { BankTransfersModule } from './bank-transfers/bank-transfers.module';
 import { BankWithdrawalsModule } from './bank-withdrawals/bank-withdrawals.module';
+import { LinkedBankAccountsModule } from './linked-bank-accounts/linked-bank-accounts.module';
 import { SettingsModule } from './settings/settings.module';
 import { MarketplaceModule } from './marketplace/marketplace.module';
 import { TokenPriceHistoryModule } from './token-price-history/token-price-history.module';
@@ -96,6 +97,7 @@ import { User } from './admin/entities/user.entity';
     BlocksAdminModule, // Blocks admin authentication
     BankTransfersModule, // Bank transfer deposit requests
     BankWithdrawalsModule, // Bank withdrawal requests
+    LinkedBankAccountsModule, // Linked bank accounts for users
     SettingsModule, // Settings management (bank account details, etc.)
     MarketplaceModule, // Peer-to-peer token marketplace
     TokenPriceHistoryModule, // Token price history tracking
