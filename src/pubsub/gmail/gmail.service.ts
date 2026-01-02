@@ -436,14 +436,12 @@ export class GmailService {
 
       this.logger.log(`📧 Email received - From: ${from}, Subject: ${subject}`);
 
-      // Classify email (ignore if not from Allied Bank or is debit)
-      // TEMPORARY: Disabled for testing - set ENABLE_BANK_FILTER=true to re-enable
-      const enableBankFilter = this.configService.get<string>('ENABLE_BANK_FILTER') === 'true';
-      if (enableBankFilter && !this.isAlliedBankEmail(from, subject)) {
-        this.logger.debug(`Ignoring email - not from Allied Bank or is debit`);
+      // STRICT: Only process emails from myABL@abl.com
+      if (!this.isAlliedBankEmail(from, subject)) {
+        this.logger.log(`⚠️  Skipping email - not from myABL@abl.com`);
+        this.logger.log(`   From: ${from}`);
+        this.logger.log(`   Subject: ${subject}`);
         return;
-      } else if (!enableBankFilter) {
-        this.logger.log(`⚠️  Bank filter disabled for testing - processing all emails`);
       }
 
       // Parse email body
@@ -479,18 +477,8 @@ export class GmailService {
       this.logger.log(`   Email From: ${transaction.emailFrom}`);
       this.logger.log(`   Email Subject: ${transaction.emailSubject}`);
 
-      // TEMPORARY: Skip wallet crediting - bank account feature not integrated yet
-      // When bank account feature is added, uncomment the creditUserWallet call below
-      this.logger.log(`⚠️  WALLET CREDITING DISABLED: Bank account feature not yet integrated`);
-      this.logger.log(`📊 Would credit wallet:`);
-      this.logger.log(`   - User match: bankAccountLast4 = ***${transaction.accountLast4}`);
-      this.logger.log(`   - Amount: PKR ${transaction.amount}`);
-      this.logger.log(`   - Transaction Ref: ${transaction.transactionRef}`);
-      this.logger.log(`   - Email Message ID: ${messageId}`);
-      this.logger.log(`   ✅ When bank accounts are integrated, this will automatically credit the wallet`);
-      
-      // TODO: Uncomment when bank account feature is integrated:
-      // await this.creditUserWallet(transaction, messageId);
+      // Credit user wallet based on matched bank account
+      await this.creditUserWallet(transaction, messageId);
 
     } catch (error) {
       this.logger.error(`Error processing email message ${messageId}:`, error);
@@ -498,20 +486,25 @@ export class GmailService {
   }
 
   /**
-   * Check if email is from Allied Bank and is a credit transaction
+   * Check if email is from Allied Bank (myABL@abl.com) - STRICT CHECK
+   * Only accepts emails from exactly 'myABL@abl.com'
+   * Note: Credit/debit check is done separately in parseTransaction
    */
   private isAlliedBankEmail(from: string, subject: string): boolean {
-    // Check if from Allied Bank
-    if (!from.toLowerCase().includes('myabl@abl.com')) {
+    // STRICT: Check if from field contains 'myABL@abl.com' (case-insensitive for email)
+    // Email From field format: "Name <myABL@abl.com>" or "myABL@abl.com" or "Intelik-blockchain <myABL@abl.com>"
+    const fromLower = from.toLowerCase();
+    
+    // Check for exact email address match (case-insensitive)
+    // This will match: "myABL@abl.com", "MyABL@abl.com", "MYABL@ABL.COM", etc.
+    // And also: "Name <myABL@abl.com>", "Intelik-blockchain <myABL@abl.com>", etc.
+    if (!fromLower.includes('myabl@abl.com')) {
+      this.logger.debug(`Email not from myABL@abl.com. From: ${from}`);
       return false;
     }
 
-    // Ignore debit emails (sent from your account)
-    if (subject.toLowerCase().includes('sent from your account') || 
-        subject.toLowerCase().includes('debit')) {
-      return false;
-    }
-
+    // Note: Credit/debit check is done separately in parseTransaction and processEmailMessage
+    // This method only validates the sender domain
     return true;
   }
 
@@ -618,27 +611,56 @@ export class GmailService {
   }
 
   /**
-   * Match user by account last 4 and credit wallet
+   * Match user by account last 4 digits (from account_number or iban) and credit wallet
+   * Uses linked_bank_accounts table to find user
    */
   private async creditUserWallet(transaction: ParsedTransaction, messageId: string): Promise<void> {
     return this.dataSource.transaction(async (manager) => {
-      // Find users with matching bank account last 4
-      // Note: You'll need to add a bankAccountLast4 field to User entity
-      const users = await manager.find(User, {
-        where: { bankAccountLast4: transaction.accountLast4 },
-      });
+      // Find linked bank account where last 4 digits of account_number OR iban match
+      // Using raw SQL for efficient matching on last 4 digits
+      const matchedAccounts = await manager.query(
+        `SELECT user_id, account_holder_name, account_number, iban 
+         FROM linked_bank_accounts 
+         WHERE 
+           RIGHT(account_number, 4) = $1 
+           OR (iban IS NOT NULL AND RIGHT(iban, 4) = $1)
+         LIMIT 2`,
+        [transaction.accountLast4]
+      );
 
-      if (users.length === 0) {
-        this.logger.warn(`No user found with account last 4: ${transaction.accountLast4}`);
+      if (matchedAccounts.length === 0) {
+        this.logger.warn(`No linked bank account found with last 4 digits: ${transaction.accountLast4}`);
+        this.logger.warn(`   Transaction will not be credited. User needs to link their bank account.`);
         return;
       }
 
-      if (users.length > 1) {
-        this.logger.error(`Multiple users found with account last 4: ${transaction.accountLast4}. Cannot credit wallet.`);
+      if (matchedAccounts.length > 1) {
+        this.logger.error(`Multiple linked bank accounts found with last 4 digits: ${transaction.accountLast4}. Cannot credit wallet.`);
+        this.logger.error(`   Matched accounts: ${JSON.stringify(matchedAccounts.map(a => ({ 
+          userId: a.user_id, 
+          accountHolder: a.account_holder_name,
+          accountNumber: a.account_number ? `***${a.account_number.slice(-4)}` : 'N/A',
+          iban: a.iban ? `***${a.iban.slice(-4)}` : 'N/A'
+        })))}`);
         return;
       }
 
-      const user = users[0];
+      const matchedAccount = matchedAccounts[0];
+      const userId = matchedAccount.user_id;
+      
+      this.logger.log(`✅ Matched linked bank account:`);
+      this.logger.log(`   Account Holder: ${matchedAccount.account_holder_name}`);
+      this.logger.log(`   Account Number: ***${transaction.accountLast4}`);
+      this.logger.log(`   IBAN: ${matchedAccount.iban ? `***${matchedAccount.iban.slice(-4)}` : 'N/A'}`);
+      this.logger.log(`   User ID: ${userId}`);
+
+      // Get user to verify
+      const user = await manager.findOne(User, { where: { id: userId } });
+      if (!user) {
+        this.logger.error(`User ${userId} not found for matched bank account`);
+        return;
+      }
+
       this.logger.log(`✅ Matched user: ${user.email} (${user.displayCode})`);
 
       // Check for duplicate transaction (idempotency)
@@ -658,7 +680,7 @@ export class GmailService {
         amountUSDT: transaction.amount.toNumber(),
       });
 
-      this.logger.log(`✅ Credited PKR ${transaction.amount} to user ${user.displayCode} from bank email`);
+      this.logger.log(`✅ Credited PKR ${transaction.amount} to user ${user.displayCode} (${user.email}) from bank email`);
     });
   }
 }
