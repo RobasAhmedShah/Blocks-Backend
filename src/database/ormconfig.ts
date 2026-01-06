@@ -7,11 +7,17 @@ dotenv.config();
 // Custom naming strategy to preserve camelCase column names
 class CamelCaseNamingStrategy extends DefaultNamingStrategy {
   columnName(propertyName: string, customName: string, embeddedPrefixes: string[]): string {
-    // If custom name is provided in @Column({ name: '...' }), use it
+    // If custom name is provided in @Column({ name: '...' }), ALWAYS use it
+    // This ensures explicit column names in entities are respected
     if (customName) {
       return customName;
     }
     // Otherwise, preserve the property name as-is (camelCase)
+    return propertyName;
+  }
+  
+  // Override relationName to ensure relation column names are also respected
+  relationName(propertyName: string): string {
     return propertyName;
   }
 }

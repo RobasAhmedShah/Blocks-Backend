@@ -155,33 +155,43 @@ export class RealtimeGateway
   }
 
   /**
-   * Listen to price event from EventEmitter and broadcast to subscribed clients
-   * NOTE: This is kept for backward compatibility but may not be used if using candle-based updates
+   * Subscribe to portfolio updates (when user is on portfolio page)
    */
-  @OnEvent('price.event.created')
-  handlePriceEventCreated(payload: {
-    propertyId: string;
-    eventType: string;
-    pricePerToken: number;
-    quantity: number;
-    timestamp: Date;
-    eventId: string;
-  }) {
-    const room = `property:${payload.propertyId}`;
+  @SubscribeMessage('subscribe:portfolio')
+  async handleSubscribePortfolio(
+    @ConnectedSocket() client: AuthenticatedSocket,
+  ) {
+    if (!client.userId) {
+      throw new UnauthorizedException('Not authenticated');
+    }
 
-    // Broadcast to all clients subscribed to this property
-    this.server.to(room).emit('price:updated', {
-      propertyId: payload.propertyId,
-      eventType: payload.eventType,
-      pricePerToken: payload.pricePerToken,
-      quantity: payload.quantity,
-      timestamp: payload.timestamp,
-      eventId: payload.eventId,
-    });
-
-    this.logger.debug(
-      `Broadcasted price update for property ${payload.propertyId} to room ${room}`,
+    const room = `portfolio:${client.userId}`;
+    await client.join(room);
+    this.logger.log(
+      `User ${client.userId} subscribed to portfolio updates`,
     );
+
+    return { success: true, userId: client.userId };
+  }
+
+  /**
+   * Unsubscribe from portfolio updates (when user leaves portfolio page)
+   */
+  @SubscribeMessage('unsubscribe:portfolio')
+  async handleUnsubscribePortfolio(
+    @ConnectedSocket() client: AuthenticatedSocket,
+  ) {
+    if (!client.userId) {
+      throw new UnauthorizedException('Not authenticated');
+    }
+
+    const room = `portfolio:${client.userId}`;
+    await client.leave(room);
+    this.logger.log(
+      `User ${client.userId} unsubscribed from portfolio updates`,
+    );
+
+    return { success: true, userId: client.userId };
   }
 
   /**
@@ -213,6 +223,40 @@ export class RealtimeGateway
 
     this.logger.debug(
       `Broadcasted candle update for property ${payload.propertyId} to room ${room}`,
+    );
+  }
+
+  /**
+   * Listen to portfolio candle update event from scheduled aggregation task
+   * Broadcasts aggregated portfolio candle data (updated every 5 minutes)
+   * Only sends to users who are subscribed to portfolio updates (on portfolio page)
+   */
+  @OnEvent('portfolio.candle.updated')
+  handlePortfolioCandleUpdated(payload: {
+    userId: string;
+    candle: {
+      date: Date;
+      openValue: number;
+      highValue: number;
+      lowValue: number;
+      closeValue: number;
+      totalInvested: number;
+      snapshotCount: number;
+    };
+    timestamp: Date;
+  }) {
+    const room = `portfolio:${payload.userId}`;
+
+    // Broadcast portfolio candle update to user's portfolio room
+    // Only users who subscribed (are on portfolio page) will receive this
+    this.server.to(room).emit('portfolio:candle:updated', {
+      userId: payload.userId,
+      candle: payload.candle,
+      timestamp: payload.timestamp,
+    });
+
+    this.logger.debug(
+      `Broadcasted portfolio candle update for user ${payload.userId} to room ${room}`,
     );
   }
 }

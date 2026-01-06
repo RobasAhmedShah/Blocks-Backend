@@ -156,16 +156,6 @@ export class TokenPriceHistoryService {
       derivedFromEventId: priceEvent.id,
     });
 
-    // 3. Emit WebSocket event for real-time updates
-    this.eventEmitter.emit('price.event.created', {
-      propertyId,
-      eventType: 'PURCHASE_EXECUTED',
-      pricePerToken: pricePerToken.toNumber(),
-      quantity: quantity.toNumber(),
-      timestamp: new Date(),
-      eventId: priceEvent.id,
-    });
-
     // 4. Trigger aggregation (async, don't await)
     this.aggregatePriceForPeriod(propertyId).catch(err => {
       this.logger.error('Error aggregating price:', err);

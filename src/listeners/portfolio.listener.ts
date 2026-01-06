@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { OnEvent } from '@nestjs/event-emitter';
 import { DataSource, Repository, EntityManager } from 'typeorm';
 import { Portfolio } from '../portfolio/entities/portfolio.entity';
+import { PortfolioService } from '../portfolio/portfolio.service';
 import type { InvestmentCompletedEvent } from '../events/investment.events';
 import type { RewardDistributedEvent } from '../events/reward.events';
 import Decimal from 'decimal.js';
@@ -15,6 +16,7 @@ export class PortfolioListener {
     private readonly dataSource: DataSource,
     @InjectRepository(Portfolio)
     private readonly portfolioRepo: Repository<Portfolio>,
+    private readonly portfolioService: PortfolioService,
   ) {}
 
   /**
@@ -36,6 +38,25 @@ export class PortfolioListener {
       });
 
       this.logger.log(`Portfolio updated for user ${event.userDisplayCode} after investment`);
+
+      // Record portfolio snapshot AFTER portfolio update completes
+      // This ensures the snapshot reflects the updated portfolio values
+      try {
+        await this.portfolioService.recordPortfolioSnapshot(
+          event.userId,
+          'investment',
+          event.investmentId
+        );
+        this.logger.debug(
+          `Portfolio snapshot recorded for investment: investmentId=${event.investmentId}, userId=${event.userId}`
+        );
+      } catch (snapshotError) {
+        this.logger.error(
+          `Error recording portfolio snapshot for investment: ${snapshotError.message}`,
+          snapshotError.stack
+        );
+        // Don't throw - snapshot failure shouldn't break the investment flow
+      }
     } catch (error) {
       this.logger.error(`Failed to update portfolio for user ${event.userDisplayCode}:`, error);
       // Don't throw - let the main operation continue
@@ -60,6 +81,25 @@ export class PortfolioListener {
       });
 
       this.logger.log(`Portfolio rewards updated for user ${event.userDisplayCode}`);
+
+      // Record portfolio snapshot AFTER portfolio update completes
+      // This ensures the snapshot reflects the updated portfolio values
+      try {
+        await this.portfolioService.recordPortfolioSnapshot(
+          event.userId,
+          'reward',
+          event.rewardId
+        );
+        this.logger.debug(
+          `Portfolio snapshot recorded for reward: rewardId=${event.rewardId}, userId=${event.userId}`
+        );
+      } catch (snapshotError) {
+        this.logger.error(
+          `Error recording portfolio snapshot for reward: ${snapshotError.message}`,
+          snapshotError.stack
+        );
+        // Don't throw - snapshot failure shouldn't break the reward flow
+      }
     } catch (error) {
       this.logger.error(`Failed to update portfolio rewards for user ${event.userDisplayCode}:`, error);
       // Don't throw - let the main operation continue

@@ -13,6 +13,7 @@ import { User } from '../admin/entities/user.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CertificatesModule } from '../certificates/certificates.module';
 import { TokenPriceHistoryModule } from '../token-price-history/token-price-history.module';
+import { PortfolioModule } from '../portfolio/portfolio.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { TokenPriceHistoryModule } from '../token-price-history/token-price-hist
     NotificationsModule,
     CertificatesModule,
     TokenPriceHistoryModule,
+    PortfolioModule,
   ],
   controllers: [MarketplaceController],
   providers: [MarketplaceService],

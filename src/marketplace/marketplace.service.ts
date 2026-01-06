@@ -23,6 +23,7 @@ import { GetListingsDto, ListingSortBy } from './dto/get-listings.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CertificatesService } from '../certificates/certificates.service';
 import { TokenPriceHistoryService } from '../token-price-history/token-price-history.service';
+import { PortfolioService } from '../portfolio/portfolio.service';
 
 @Injectable()
 export class MarketplaceService {
@@ -50,6 +51,7 @@ export class MarketplaceService {
     private readonly notificationsService: NotificationsService,
     private readonly certificatesService: CertificatesService,
     private readonly tokenPriceHistoryService: TokenPriceHistoryService,
+    private readonly portfolioService: PortfolioService,
   ) {}
 
   /**
@@ -537,17 +539,32 @@ export class MarketplaceService {
       // Track which investment was updated for certificate regeneration
       let sellerInvestmentId: string | undefined;
       let remainingToDeduct = tokensToBuy;
+      let totalOriginalInvestmentAmount = new Decimal(0); // Track original investment amount sold
+      let anyInvestmentSold = false; // Track if any investment status changed to 'sold'
+      
       for (const lock of locks) {
         if (remainingToDeduct.lte(0)) break;
 
         const investment = lock.investment;
         const lockedAmount = lock.lockedTokens as Decimal;
         const toDeduct = Decimal.min(remainingToDeduct, lockedAmount);
+        
+        // Calculate the proportion of original investment amount being sold
+        const originalTokens = (investment.tokensPurchased as Decimal).plus(toDeduct); // Tokens before deduction
+        const originalAmount = investment.amountUSDT as Decimal;
+        const proportionSold = toDeduct.div(originalTokens);
+        const originalInvestmentAmountSold = originalAmount.mul(proportionSold);
+        totalOriginalInvestmentAmount = totalOriginalInvestmentAmount.plus(originalInvestmentAmountSold);
 
         // Update seller's investment
-        investment.tokensPurchased = (investment.tokensPurchased as Decimal).minus(toDeduct);
+        const tokensBefore = investment.tokensPurchased as Decimal;
+        investment.tokensPurchased = tokensBefore.minus(toDeduct);
+        // Also reduce the investment amount proportionally
+        investment.amountUSDT = (investment.amountUSDT as Decimal).minus(originalInvestmentAmountSold);
+        
         if (investment.tokensPurchased.lte(0)) {
           investment.status = 'sold';
+          anyInvestmentSold = true;
         }
         await manager.save(Investment, investment);
         
@@ -571,6 +588,16 @@ export class MarketplaceService {
       if (!sellerInvestmentId && locks.length > 0) {
         sellerInvestmentId = locks[0].investment.id;
       }
+      
+      // Update seller's portfolio (decrease totalInvestedUSDT and activeInvestments if needed)
+      if (totalOriginalInvestmentAmount.gt(0)) {
+        await this.portfolioService.updateAfterMarketplaceSell(
+          listing.sellerId,
+          totalOriginalInvestmentAmount,
+          anyInvestmentSold,
+          manager,
+        );
+      }
 
       // 12. Create or update buyer's investment
       // Note: Investments typically use 'confirmed' status, not 'active'
@@ -581,6 +608,8 @@ export class MarketplaceService {
         ],
       });
 
+      const isNewBuyerInvestment = !buyerInvestment;
+      
       if (buyerInvestment) {
         // Update existing investment
         buyerInvestment.tokensPurchased = (buyerInvestment.tokensPurchased as Decimal).plus(
@@ -612,6 +641,14 @@ export class MarketplaceService {
         });
         await manager.save(Investment, buyerInvestment);
       }
+      
+      // Update buyer's portfolio (increase totalInvestedUSDT and activeInvestments if new)
+      await this.portfolioService.updateAfterMarketplaceBuy(
+        buyerId,
+        totalUSDT,
+        isNewBuyerInvestment,
+        manager,
+      );
 
       // 13. Create transactions
       const txnResult = await manager.query(
@@ -684,24 +721,39 @@ export class MarketplaceService {
           buyerInvestmentId: buyerInvestment.id, // Store investment ID in metadata for certificate linking
         },
       });
-      await manager.save(MarketplaceTrade, trade);
+      const savedTrade = await manager.save(MarketplaceTrade, trade);
+
+      // Ensure trade ID is available
+      if (!savedTrade.id) {
+        this.logger.error(`Trade ID is null after save for trade ${tradeDisplayCode}`);
+        throw new Error('Trade ID is null after save');
+      }
 
       this.logger.log(
-        `Trade completed: ${tradeDisplayCode} - Buyer: ${buyerId}, Seller: ${listing.sellerId}, Tokens: ${tokensToBuy.toString()}`,
+        `Trade completed: ${tradeDisplayCode} - Buyer: ${buyerId}, Seller: ${listing.sellerId}, Tokens: ${tokensToBuy.toString()}, TradeId: ${savedTrade.id}`,
       );
 
-      // 15. Emit event for certificate generation (after transaction commits)
-      this.eventEmitter.emit('marketplace.trade.completed', {
-        tradeId: trade.id,
-        tradeDisplayCode: trade.displayCode,
+      // Store trade data for event emission after transaction commits
+      const tradeEventData = {
+        tradeId: savedTrade.id,
+        tradeDisplayCode: savedTrade.displayCode,
         buyerId,
         sellerId: listing.sellerId,
         propertyId: listing.propertyId,
         propertyTitle: listing.property.title,
         tokensBought: tokensToBuy.toString(),
         totalUSDT: totalUSDT.toString(),
-        buyerInvestmentId: buyerInvestment.id, // Pass investment ID for certificate linking
-        sellerInvestmentId: sellerInvestmentId, // Pass seller investment ID for certificate regeneration
+        buyerInvestmentId: buyerInvestment.id,
+        sellerInvestmentId: sellerInvestmentId,
+      };
+
+      // 15. Emit event AFTER transaction commits to ensure trade ID is available
+      // Use setImmediate to ensure it runs after the transaction commits
+      setImmediate(() => {
+        this.eventEmitter.emit('marketplace.trade.completed', tradeEventData);
+        this.logger.debug(
+          `Marketplace trade completed event emitted: tradeId=${tradeEventData.tradeId}, tradeDisplayCode=${tradeEventData.tradeDisplayCode}`
+        );
       });
 
       // 16. Send notifications

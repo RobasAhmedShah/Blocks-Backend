@@ -20,6 +20,7 @@ import { OrganizationAdmin } from '../organization-admins/entities/organization-
 import { MarketplaceTrade } from '../marketplace/entities/marketplace-trade.entity';
 import { CertificatesModule } from '../certificates/certificates.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { PortfolioModule } from '../portfolio/portfolio.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     ]),
     CertificatesModule,
     NotificationsModule,
+    PortfolioModule, // Import PortfolioModule to access PortfolioService
   ],
   providers: [
     PortfolioListener,

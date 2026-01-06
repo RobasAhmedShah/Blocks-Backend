@@ -2,14 +2,15 @@
 
 ## Overview
 
-This WebSocket gateway provides real-time price history updates for the Blocks marketplace. When a trade is executed, all subscribed clients receive instant price updates.
+This WebSocket gateway provides real-time updates for the Blocks marketplace. Updates are sent via aggregated candle data (updated periodically) rather than individual price events.
 
 ## Features
 
 - ✅ JWT authentication for secure connections
 - ✅ Property-specific room subscriptions
+- ✅ Portfolio-specific room subscriptions
 - ✅ Automatic user room assignment
-- ✅ Event-driven price updates via EventEmitter
+- ✅ Event-driven candle updates via EventEmitter
 - ✅ Connection/disconnection tracking
 
 ## Connection
@@ -55,32 +56,59 @@ socket.emit('unsubscribe:property', { propertyId: 'property-uuid' });
 
 ### Server → Client
 
-#### Price Updated Event
+#### Candle Updated Event (Property Price History)
 ```typescript
-socket.on('price:updated', (data) => {
-  console.log('Price updated:', data);
+socket.on('candle:updated', (data) => {
+  console.log('Candle updated:', data);
   // {
   //   propertyId: string,
-  //   eventType: 'PURCHASE_EXECUTED',
-  //   pricePerToken: number,
-  //   quantity: number,
-  //   timestamp: Date,
-  //   eventId: string
+  //   candle: {
+  //     date: Date,
+  //     openPrice: number,
+  //     highPrice: number,
+  //     lowPrice: number,
+  //     closePrice: number,
+  //     volume: number,
+  //     tradeCount: number
+  //   },
+  //   timestamp: Date
+  // }
+});
+```
+
+#### Portfolio Candle Updated Event
+```typescript
+socket.on('portfolio:candle:updated', (data) => {
+  console.log('Portfolio candle updated:', data);
+  // {
+  //   userId: string,
+  //   candle: {
+  //     date: Date,
+  //     openValue: number,
+  //     highValue: number,
+  //     lowValue: number,
+  //     closeValue: number,
+  //     totalInvested: number,
+  //     snapshotCount: number
+  //   },
+  //   timestamp: Date
   // }
 });
 ```
 
 ## How It Works
 
-1. **Trade Execution**: When a marketplace trade is executed, `TokenPriceHistoryService.recordMarketplaceTrade()` emits `price.event.created` event
-2. **Event Listener**: `RealtimeGateway` listens to this event via `@OnEvent('price.event.created')`
-3. **Broadcast**: The gateway broadcasts the update to all clients in the `property:{propertyId}` room
-4. **Client Receives**: Subscribed clients receive the `price:updated` event in real-time
+1. **Aggregation**: Scheduled tasks aggregate price events and portfolio snapshots into daily candles
+2. **Event Emission**: After aggregation, `candle.updated` and `portfolio.candle.updated` events are emitted
+3. **Event Listener**: `RealtimeGateway` listens to these events via `@OnEvent` decorators
+4. **Broadcast**: The gateway broadcasts candle updates to subscribed clients in their respective rooms
+5. **Client Receives**: Subscribed clients receive `candle:updated` or `portfolio:candle:updated` events
 
 ## Rooms
 
 - `user:{userId}` - Automatically joined on connection
 - `property:{propertyId}` - Joined when client subscribes to property updates
+- `portfolio:{userId}` - Joined when client subscribes to portfolio updates
 
 ## Security
 
