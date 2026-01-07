@@ -302,7 +302,7 @@ export class PortfolioService {
    * Aggregate snapshots into daily candles (runs hourly)
    * Similar to token-price-history aggregation
    */
-  @Cron('*/5 * * * *') // Every hour
+  @Cron('0 * * * *') // Every hour
   async aggregateDailyCandles() {
     try {
       this.logger.debug('Starting portfolio daily candles aggregation...');
