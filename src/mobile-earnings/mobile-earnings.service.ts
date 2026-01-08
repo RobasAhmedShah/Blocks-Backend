@@ -39,7 +39,7 @@ export class MobileEarningsService {
         userId: actualUserId,
         status: 'distributed',
       },
-      relations: ['investment', 'investment.property'],
+      relations: ['investment', 'investment.property', 'investment.propertyToken'],
       order: {
         createdAt: 'DESC',
       },

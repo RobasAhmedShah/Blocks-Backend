@@ -180,8 +180,7 @@ export class RewardsService {
         
         const reward = manager.getRepository(Reward).create({
           userId,
-          investmentId: userInvestments[0].id, // Reference first investment
-          propertyTokenId: propertyToken?.id || null, // NEW: Link to token tier if token-specific ROI
+          investmentId: userInvestments[0].id, // Reference first investment (propertyTokenId can be accessed via investment.propertyTokenId)
           amountUSDT: roiShare,
           type: 'roi',
           description: propertyToken
@@ -276,7 +275,7 @@ export class RewardsService {
   }
 
   async findAll() {
-    return this.rewardRepo.find({ relations: ['user', 'investment'] });
+    return this.rewardRepo.find({ relations: ['user', 'investment', 'investment.propertyToken'] });
   }
 
   async findByUserId(userId: string) {
@@ -284,19 +283,19 @@ export class RewardsService {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
     
     if (isUuid) {
-      return this.rewardRepo.find({ where: { userId }, relations: ['investment'] });
+      return this.rewardRepo.find({ where: { userId }, relations: ['investment', 'investment.propertyToken'] });
     } else {
       // It's a display code, find the user first to get their UUID
       const user = await this.dataSource.getRepository(User).findOne({ where: { displayCode: userId } });
       if (!user) {
         throw new NotFoundException('User not found');
       }
-      return this.rewardRepo.find({ where: { userId: user.id }, relations: ['investment'] });
+      return this.rewardRepo.find({ where: { userId: user.id }, relations: ['investment', 'investment.propertyToken'] });
     }
   }
 
   async findOne(id: string) {
-    return this.rewardRepo.findOne({ where: { id }, relations: ['user', 'investment'] });
+    return this.rewardRepo.findOne({ where: { id }, relations: ['user', 'investment', 'investment.propertyToken'] });
   }
 
   async findByIdOrDisplayCode(idOrCode: string) {
@@ -304,9 +303,9 @@ export class RewardsService {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrCode);
     
     if (isUuid) {
-      return this.rewardRepo.findOne({ where: { id: idOrCode }, relations: ['user', 'investment'] });
+      return this.rewardRepo.findOne({ where: { id: idOrCode }, relations: ['user', 'investment', 'investment.propertyToken'] });
     } else {
-      return this.rewardRepo.findOne({ where: { displayCode: idOrCode }, relations: ['user', 'investment'] });
+      return this.rewardRepo.findOne({ where: { displayCode: idOrCode }, relations: ['user', 'investment', 'investment.propertyToken'] });
     }
   }
 }

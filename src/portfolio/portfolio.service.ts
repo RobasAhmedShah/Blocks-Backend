@@ -144,7 +144,7 @@ export class PortfolioService {
     // Get all rewards
     const rewards = await this.rewardRepo.find({
       where: { userId: actualUserId },
-      relations: ['investment', 'investment.property'],
+      relations: ['investment', 'investment.property', 'investment.propertyToken'],
       order: { createdAt: 'DESC' }
     });
 

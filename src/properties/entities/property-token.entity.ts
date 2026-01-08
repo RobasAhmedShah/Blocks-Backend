@@ -13,7 +13,6 @@ import { DecimalTransformer } from '../../common/decimal.transformer';
 import Decimal from 'decimal.js';
 import { Property } from './property.entity';
 import { Investment } from '../../investments/entities/investment.entity';
-import { Reward } from '../../rewards/entities/reward.entity';
 
 @Entity('property_tokens')
 export class PropertyToken {
@@ -90,9 +89,6 @@ export class PropertyToken {
 
   @OneToMany(() => Investment, (investment) => investment.propertyToken)
   investments: Investment[];
-
-  @OneToMany(() => Reward, (reward) => reward.propertyToken)
-  rewards: Reward[];
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
